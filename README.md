@@ -29,6 +29,7 @@ A powerful Chrome extension that enhances your AI interactions with ChatGPT and 
 2. Click the PiEVerse icon in your toolbar or use the keyboard shortcut (Ctrl/Cmd + Shift + P)
 3. Select a prompt from the available categories:
    - Writing & Analysis
+   - Finance & Markets
    - Code & Development
 4. The selected prompt will be automatically inserted into the chat interface
 
@@ -37,6 +38,10 @@ A powerful Chrome extension that enhances your AI interactions with ChatGPT and 
 ### Writing & Analysis
 - Deep Analysis: Comprehensive text analysis focusing on themes and arguments
 - Quick Summary: Concise summaries of key points and takeaways
+
+### Finance & Markets
+- Market Analysis: Detailed explanation of market movements and driving factors
+- Financial Writing: Professional refinement of financial analysis and reports
 
 ### Code & Development
 - Code Generation: Production-ready code with documentation
