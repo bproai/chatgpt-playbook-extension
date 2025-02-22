@@ -3,7 +3,9 @@
   "name": "ChatGPT Playbook",
   "version": "1.0",
   "description": "Provides canned prompts to automatically populate ChatGPT's input box.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": [
+    "activeTab"
+  ],
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -15,9 +17,12 @@
   },
   "content_scripts": [
     {
-      "matches": ["https://chat.openai.com/*"],
-      "js": ["content.js"]
+      "matches": [
+        "https://chat.openai.com/*",
+        "https://chatgpt.com/*"
+      ],
+      "js": ["content.js"],
+      "all_frames": true
     }
   ]
 }
-

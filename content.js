@@ -1,16 +1,23 @@
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log("Received message:", request); // Debug log
+
   if (request.action === "insertPrompt") {
-    // Use an interval to check for the presence of the input box
+    // Poll every 500ms for the element to appear
     const interval = setInterval(() => {
-      // Adjust the selector to target ChatGPT's prompt input area as needed
-      const inputBox = document.querySelector("textarea[placeholder='Send a message...']");
+      // Grab the contenteditable <div> by its ID (#prompt-textarea)
+      const inputBox = document.querySelector("#prompt-textarea");
+      console.log("Trying to find input box:", inputBox);
+
       if (inputBox) {
-        inputBox.value = request.prompt;
-        // Dispatch an input event in case the page framework needs to detect the change
+        // Because it's a contenteditable <div>, set the innerText instead of 'value'
+        inputBox.innerText = request.prompt;
+
+        // Dispatch an 'input' event so the page knows the content changed
         inputBox.dispatchEvent(new Event('input', { bubbles: true }));
+
+        // Stop polling once we've successfully updated the element
         clearInterval(interval);
       }
     }, 500);
   }
 });
-
