@@ -1,49 +1,73 @@
+// popup.js
+
 document.addEventListener('DOMContentLoaded', () => {
-  // Define your playbooks with a title and corresponding prompt text
-  const playbooks = [
-    {
-      title: "Summarize Article",
-      prompt: "Please summarize the key points of the following article."
-    },
-    {
-      title: "Generate Code",
-      prompt: "Write a sample code snippet in JavaScript that demonstrates X."
-    },
-    {
-      title: "Explain Concept",
-      prompt: "Explain the concept of machine learning in simple terms."
-    }
-    // Add more playbooks as needed
-  ];
-
-  // Get the container element where playbook buttons will be added
-  const playbooksContainer = document.getElementById('playbooks');
-
-  // Loop through the playbooks and create a clickable div for each
-  playbooks.forEach((book) => {
-    const div = document.createElement('div');
-    div.className = 'prompt';
-    div.textContent = book.title;
-
-    // On click, send the prompt to the active tab
-    div.addEventListener('click', () => {
-      console.log("Sending prompt:", book.prompt); // Debug log
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) {
-          chrome.tabs.sendMessage(
-            tabs[0].id, 
-            { action: "insertPrompt", prompt: book.prompt },
-            (response) => {
-              // If there's an error (e.g., no content script), log it
-              if (chrome.runtime.lastError) {
-                console.error("Message error:", chrome.runtime.lastError.message);
-              }
-            }
-          );
+  // Find all playbook cards
+  const playbookCards = document.querySelectorAll('.playbook-card');
+  
+  // Add click handlers to each card
+  playbookCards.forEach(card => {
+    card.addEventListener('click', async () => {
+      try {
+        const prompt = card.dataset.prompt;
+        console.log('Clicked card with prompt:', prompt);
+        
+        // Get the active tab
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        
+        if (!tab) {
+          showNotification('Error: No active tab found', 'error');
+          return;
         }
-      });
-    });
 
-    playbooksContainer.appendChild(div);
+        // Send message to content script
+        const response = await chrome.tabs.sendMessage(tab.id, {
+          action: 'insertPrompt',
+          prompt: prompt
+        });
+
+        if (response && response.success) {
+          showNotification('Prompt inserted successfully');
+          // Close popup after short delay
+          setTimeout(() => window.close(), 1000);
+        } else {
+          showNotification('Failed to insert prompt', 'error');
+        }
+
+      } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error inserting prompt', 'error');
+      }
+    });
   });
+
+  // Setup notification system
+  function showNotification(message, type = 'success') {
+    const notification = document.getElementById('notification');
+    if (!notification) return;
+
+    notification.textContent = message;
+    notification.className = `notification show ${type}`;
+    
+    setTimeout(() => {
+      notification.className = 'notification';
+    }, 2000);
+  }
+
+  // Add custom button handler
+  const addCustomBtn = document.getElementById('addCustom');
+  if (addCustomBtn) {
+    addCustomBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      showNotification('Custom prompts coming soon!');
+    });
+  }
+
+  // Settings button handler
+  const settingsBtn = document.getElementById('settings');
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      showNotification('Settings coming soon!');
+    });
+  }
 });
