@@ -2,6 +2,7 @@
 
 // Constants
 const CHATGPT_INPUT_SELECTOR = '#prompt-textarea';
+const CLAUDE_INPUT_SELECTOR = 'div[contenteditable="true"]';
 const POLLING_INTERVAL = 100;
 const MAX_RETRIES = 50;
 const DEBUG = true;
@@ -10,11 +11,28 @@ const DEBUG = true;
 let retryCount = 0;
 let pollingInterval = null;
 
+// Get current platform
+function getCurrentPlatform() {
+  const hostname = window.location.hostname;
+  if (hostname.includes('chat.openai.com')) return 'chatgpt';
+  if (hostname.includes('chatgpt.com')) return 'chatgpt';
+  if (hostname.includes('claude.ai')) return 'claude';
+  return null;
+}
+
 // Message handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log("Received message:", request);
 
   if (request.action === "insertPrompt") {
+    // Get current platform
+    const platform = getCurrentPlatform();
+    if (!platform) {
+      console.error("Unsupported platform");
+      sendResponse({ success: false, error: "Unsupported platform" });
+      return;
+    }
+
     // Clear any existing polling interval
     if (pollingInterval) {
       clearInterval(pollingInterval);
@@ -25,22 +43,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // Poll for input element
     pollingInterval = setInterval(() => {
-      const inputBox = document.querySelector(CHATGPT_INPUT_SELECTOR);
-      console.log("Trying to find input box:", inputBox);
+      // Select appropriate input selector based on platform
+      const selector = platform === 'claude' ? CLAUDE_INPUT_SELECTOR : CHATGPT_INPUT_SELECTOR;
+      const inputBox = document.querySelector(selector);
+      console.log("Trying to find input box:", inputBox, "for platform:", platform);
 
       if (inputBox) {
         // Clear the interval once element is found
         clearInterval(pollingInterval);
 
         // Insert the prompt
-        inputBox.value = request.prompt;
-        inputBox.innerHTML = request.prompt;
+        if (platform === 'claude') {
+          // Claude.ai specific handling
+          inputBox.textContent = request.prompt;
+          inputBox.dispatchEvent(new Event('input', { bubbles: true }));
+        } else {
+          // ChatGPT handling
+          inputBox.value = request.prompt;
+          inputBox.innerHTML = request.prompt;
+          inputBox.dispatchEvent(new Event('input', { bubbles: true }));
+        }
 
         // Focus the input
         inputBox.focus();
-
-        // Dispatch input event
-        inputBox.dispatchEvent(new Event('input', { bubbles: true }));
 
         // Send success response
         sendResponse({ success: true });

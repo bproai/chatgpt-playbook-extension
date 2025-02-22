@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "ChatGPT Playbook Pro",
+  "name": "PiEVerse Prompt Pro",
   "version": "1.0.1",
-  "description": "Professional prompt library for ChatGPT - Boost your productivity with curated AI prompts and templates.",
+  "description": "Professional prompt library to enhance your AI interactions. Save time with curated prompts for analysis and content creation.",
+  "short_name": "PiEVerse",
   
   "permissions": [
     "storage",
@@ -10,10 +11,34 @@
   ],
   
   "host_permissions": [
-    "https://chat.openai.com/*",
-    "https://chatgpt.com/*"
+    "*://chat.openai.com/*",
+    "*://chatgpt.com/*",
+    "*://claude.ai/*"
   ],
   
+  "content_scripts": [
+    {
+      "matches": [
+        "*://chat.openai.com/*",
+        "*://chatgpt.com/*",
+        "*://claude.ai/*"
+      ],
+      "js": ["content.js"],
+      "all_frames": false
+    }
+  ],
+
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*"],
+      "matches": [
+        "*://chat.openai.com/*",
+        "*://chatgpt.com/*",
+        "*://claude.ai/*"
+      ]
+    }
+  ],
+
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -30,30 +55,8 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  
-  "content_scripts": [
-    {
-      "matches": [
-        "https://chat.openai.com/*",
-        "https://chatgpt.com/*"
-      ],
-      "js": ["content.js"],
-      "all_frames": false
-    }
-  ],
 
-  "web_accessible_resources": [
-    {
-      "resources": ["icons/*"],
-      "matches": [
-        "https://chat.openai.com/*",
-        "https://chatgpt.com/*"
-      ]
-    }
-  ],
-
-  "author": "Your Name",
-  "homepage_url": "https://your-website.com",
+  "author": "Reason ONE LLC",
   
   "minimum_chrome_version": "88",
   
@@ -63,7 +66,7 @@
         "default": "Ctrl+Shift+P",
         "mac": "Command+Shift+P"
       },
-      "description": "Open ChatGPT Playbook Pro"
+      "description": "Open PiEVerse Prompt Assistant"
     }
   }
 }
