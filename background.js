@@ -1,73 +1,61 @@
 // background.js
 
-// Listen for messages from the content script
+// Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "clickSubmitButton") {
-    const platform = request.platform;
-    
-    // Get the current tab ID from the sender
+    // Get the tab ID from the sender
     const tabId = sender.tab.id;
     
-    // Execute the appropriate function based on the platform
-    if (platform === 'chatgpt') {
-      // For ChatGPT
-      chrome.scripting.executeScript({
-        target: { tabId: tabId },
-        func: () => {
-          const btn = document.querySelector('button[data-testid="send-button"]');
-          if (btn && !btn.disabled) {
-            console.log("Found and clicking ChatGPT send button");
-            btn.click();
-            return true;
-          } else {
-            console.log("Button not found or disabled");
-            // Try finding by aria-label
-            const altBtn = document.querySelector('button[aria-label="Send prompt"]');
-            if (altBtn && !altBtn.disabled) {
-              console.log("Found and clicking by aria-label");
-              altBtn.click();
-              return true;
-            }
-            return false;
-          }
-        }
-      }).then(results => {
-        console.log("Script executed:", results);
-      }).catch(err => {
-        console.error("Error executing script:", err);
-      });
-    } else if (platform === 'claude') {
-      // For Claude
-      chrome.scripting.executeScript({
-        target: { tabId: tabId },
-        func: () => {
-          const btn = document.querySelector('button[aria-label="Send message"]');
-          if (btn && !btn.disabled) {
-            console.log("Found and clicking Claude send button");
-            btn.click();
-            return true;
-          } else {
-            console.log("Claude button not found or disabled");
-            // Try finding buttons with "Send" text
-            const buttons = Array.from(document.querySelectorAll('button'));
-            for (const button of buttons) {
-              if (!button.disabled && button.textContent.includes('Send')) {
-                console.log("Found and clicking by text content");
-                button.click();
-                return true;
-              }
-            }
-            return false;
-          }
-        }
-      }).then(results => {
-        console.log("Script executed:", results);
-      }).catch(err => {
-        console.error("Error executing script:", err);
-      });
-    }
+    console.log("Received clickSubmitButton request for platform:", request.platform);
     
-    // Return true to indicate we're handling this asynchronously
+    // Execute a script in the tab to click the submit button
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      function: clickSubmitButton,
+      args: [request.platform]
+    })
+    .then(results => {
+      console.log("Button click script executed:", results);
+      sendResponse({ success: true });
+    })
+    .catch(error => {
+      console.error("Error executing button click script:", error);
+      sendResponse({ success: false, error: error.message });
+    });
+    
+    // Keep the message channel open for async response
     return true;
   }
 });
+
+// Function that will be injected into the page to click the submit button
+function clickSubmitButton(platform) {
+  console.log(`Attempting to click submit button for ${platform}`);
+  
+  if (platform === 'chatgpt') {
+    // ChatGPT - Keep the exact same implementation that was working
+    const button = document.querySelector('button[data-testid="send-button"]');
+    if (button && !button.disabled) {
+      console.log("Found and clicking ChatGPT send button");
+      button.click();
+      return true;
+    } else {
+      console.log("ChatGPT button not found or is disabled");
+      return false;
+    }
+  } 
+  else if (platform === 'claude') {
+    // Claude - Based on the HTML snippet you provided
+    const claudeButton = document.querySelector('button[aria-label="Send Message"]');
+    if (claudeButton && !claudeButton.disabled) {
+      console.log("Found and clicking Claude send button");
+      claudeButton.click();
+      return true;
+    } else {
+      console.log("Claude button not found or is disabled");
+      return false;
+    }
+  }
+  
+  return false;
+}
