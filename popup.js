@@ -3,10 +3,12 @@
 // Global variables
 let allPrompts = [];
 let apiUrl = 'http://localhost:3030'; // Default API URL
+let autoSubmitEnabled = false; // Default to off for auto-submit
 
 document.addEventListener('DOMContentLoaded', () => {
   // Load saved settings
   loadSettings();
+  loadAutoSubmitSetting();
   
   // Initialize the prompt collection with built-in prompts
   collectBuiltInPrompts();
@@ -145,9 +147,16 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Pre-fill current settings
         try {
+          // API settings
           const url = new URL(apiUrl);
           document.getElementById('apiHost').value = url.hostname;
           document.getElementById('apiPort').value = url.port || '3030';
+          
+          // Auto-submit toggle
+          const autoSubmitToggle = document.getElementById('autoSubmitToggle');
+          if (autoSubmitToggle) {
+            autoSubmitToggle.checked = autoSubmitEnabled;
+          }
           
           // Also update preview
           const previewHost = document.getElementById('previewHost');
@@ -197,8 +206,13 @@ document.addEventListener('DOMContentLoaded', () => {
     settingsForm.addEventListener('submit', (e) => {
       e.preventDefault();
       
+      // Get API settings
       const host = document.getElementById('apiHost').value.trim();
       const port = document.getElementById('apiPort').value.trim();
+      
+      // Get auto-submit setting
+      const autoSubmitToggle = document.getElementById('autoSubmitToggle');
+      const newAutoSubmitEnabled = autoSubmitToggle ? autoSubmitToggle.checked : false;
       
       // Basic validation
       if (!host) {
@@ -213,6 +227,12 @@ document.addEventListener('DOMContentLoaded', () => {
       
       // Save the settings
       saveSettings(host, port);
+      
+      // Save auto-submit setting
+      chrome.storage.sync.set({ autoSubmitEnabled: newAutoSubmitEnabled }, function() {
+        console.log('Auto-submit setting saved:', newAutoSubmitEnabled);
+        autoSubmitEnabled = newAutoSubmitEnabled;
+      });
       
       // Close modal and show confirmation
       const settingsModal = document.getElementById('settingsModal');
@@ -338,6 +358,25 @@ function loadSettings() {
   });
 }
 
+// Load auto-submit setting
+function loadAutoSubmitSetting() {
+  chrome.storage.sync.get(['autoSubmitEnabled'], function(result) {
+    if (typeof result.autoSubmitEnabled !== 'undefined') {
+      autoSubmitEnabled = result.autoSubmitEnabled;
+      console.log('Loaded auto-submit setting:', autoSubmitEnabled);
+      
+      // Update toggle in settings if it exists
+      const autoSubmitToggle = document.getElementById('autoSubmitToggle');
+      if (autoSubmitToggle) {
+        autoSubmitToggle.checked = autoSubmitEnabled;
+      }
+    } else {
+      // If setting doesn't exist yet, initialize it to false (off)
+      chrome.storage.sync.set({ autoSubmitEnabled: false });
+    }
+  });
+}
+
 // Save settings to storage
 function saveSettings(host, port) {
   // Construct the full URL
@@ -374,6 +413,12 @@ function ensureButtonsFunctional() {
           const previewPort = document.getElementById('previewPort');
           if (previewHost) previewHost.textContent = url.hostname;
           if (previewPort) previewPort.textContent = url.port || '3030';
+          
+          // Auto-submit toggle
+          const autoSubmitToggle = document.getElementById('autoSubmitToggle');
+          if (autoSubmitToggle) {
+            autoSubmitToggle.checked = autoSubmitEnabled;
+          }
         } catch (error) {
           console.error('Error parsing API URL:', error);
         }
@@ -396,7 +441,6 @@ function ensureButtonsFunctional() {
     addCustomBtn.dataset.listenerAttached = "true";
   }
 }
-
 
 // Helper function to get a user-friendly error message
 function getConnectionErrorMessage(error) {
@@ -532,14 +576,17 @@ function addPromptClickHandler(card) {
         return;
       }
 
-      // Send message to content script
+      // Send message to content script with auto-submit flag
       const response = await chrome.tabs.sendMessage(tab.id, {
         action: 'insertPrompt',
-        prompt: prompt
+        prompt: prompt,
+        autoSubmit: autoSubmitEnabled // Pass the auto-submit setting
       });
 
       if (response && response.success) {
-        showNotification('Prompt inserted and submitted');
+        // Show different messages based on auto-submit setting
+        const message = autoSubmitEnabled ? 'Prompt inserted and submitted' : 'Prompt inserted successfully';
+        showNotification(message);
         // Close popup after short delay
         setTimeout(() => window.close(), 1000);
       } else {
@@ -843,7 +890,7 @@ function showNotification(message, type = 'success') {
     notification.className = 'notification';
   }, 2000);
 }
-
+    
 // Test API connection
 async function testApiConnection() {
   try {

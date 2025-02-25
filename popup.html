@@ -168,6 +168,21 @@ Access-Control-Allow-Headers: Content-Type</code></pre>
               Your API will be accessed at: <code>http://<span id="previewHost">localhost</span>:<span id="previewPort">3030</span>/api/prompts</code>
             </p>
           </div>
+          
+          <!-- Auto-submit toggle -->
+          <div class="form-group toggle-group">
+            <div class="toggle-label">
+              <label for="autoSubmitToggle">Auto-submit prompts</label>
+              <small class="form-help">When enabled, prompts will be automatically submitted after insertion</small>
+            </div>
+            <div class="toggle-control">
+              <label class="switch">
+                <input type="checkbox" id="autoSubmitToggle">
+                <span class="slider round"></span>
+              </label>
+            </div>
+          </div>
+          
           <div class="form-actions">
             <button type="button" class="close-settings-modal">Cancel</button>
             <button type="submit">Save Settings</button>
