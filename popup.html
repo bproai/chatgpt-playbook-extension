@@ -12,6 +12,11 @@
         <img src="logo.svg" alt="PiEVerse Logo">
       </div>
       <div class="header-text">Your AI Assistant Playbook</div>
+      <div class="header-actions">
+        <button id="pullPrompts" class="icon-button" title="Pull prompts from local API">
+          <span class="refresh-icon">↻</span>
+        </button>
+      </div>
     </div>
 
     <div class="category-label">Writing & Analysis</div>
@@ -72,6 +77,71 @@
     </div>
 
     <div class="notification" id="notification"></div>
+  </div>
+
+  <!-- Add Custom Prompt Modal -->
+  <div class="modal" id="addCustomModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>Add Custom Prompt</h3>
+        <span class="close-modal">&times;</span>
+      </div>
+      <div class="modal-body">
+        <form id="addPromptForm">
+          <div class="form-group">
+            <label for="promptTitle">Title</label>
+            <input type="text" id="promptTitle" required placeholder="e.g., Technical Review">
+          </div>
+          <div class="form-group">
+            <label for="promptCategory">Category</label>
+            <input type="text" id="promptCategory" required placeholder="e.g., CODE & DEVELOPMENT">
+          </div>
+          <div class="form-group">
+            <label for="promptText">Prompt</label>
+            <textarea id="promptText" required rows="5" placeholder="Enter your prompt text here..."></textarea>
+          </div>
+          <div class="form-actions">
+            <button type="button" id="cancelButton">Cancel</button>
+            <button type="submit">Save Prompt</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+  
+  <!-- API Connection Help Modal -->
+  <div class="modal" id="apiHelpModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>API Connection Help</h3>
+        <span class="close-modal close-help-modal">&times;</span>
+      </div>
+      <div class="modal-body">
+        <div class="help-content">
+          <h4>To connect to the local API:</h4>
+          <ol>
+            <li>Ensure your API server is running on localhost:3030</li>
+            <li>The API should respond to GET requests at <code>/api/prompts</code></li>
+            <li>Response format should match the expected schema</li>
+          </ol>
+          
+          <h4>Common issues:</h4>
+          <ul>
+            <li>Server not running - Check that your local API server has started</li>
+            <li>Wrong port - Verify the server is using port 3030</li>
+            <li>CORS issues - Ensure the API allows CORS with headers:
+              <pre><code>Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: GET, POST
+Access-Control-Allow-Headers: Content-Type</code></pre>
+            </li>
+          </ul>
+          
+          <div class="api-test-button-container">
+            <button id="testApiButton">Test API Connection</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <div class="footer">

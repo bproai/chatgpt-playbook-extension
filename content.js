@@ -60,7 +60,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         } else {
           // ChatGPT handling
           inputBox.value = request.prompt;
-          inputBox.innerHTML = request.prompt;
+          // inputBox.innerHTML = request.prompt;
           inputBox.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
