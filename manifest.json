@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PiEVerse Prompt Pro",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Professional prompt library to enhance your AI interactions. Save time with curated prompts for analysis and content creation.",
   "short_name": "PiEVerse",
   
@@ -12,9 +12,9 @@
   
   "host_permissions": [
     "*://chat.openai.com/*",
-    "*://chatgpt.com/*",
+    "*://chatgpt.com/*", 
     "*://claude.ai/*",
-    "http://localhost:3030/*"
+    "http://*/*"
   ],
   
   "content_scripts": [

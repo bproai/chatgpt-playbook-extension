@@ -2,8 +2,12 @@
 
 // Global variables
 let allPrompts = [];
+let apiUrl = 'http://localhost:3030'; // Default API URL
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Load saved settings
+  loadSettings();
+  
   // Initialize the prompt collection with built-in prompts
   collectBuiltInPrompts();
   
@@ -86,7 +90,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         
         // Send to API
-        const response = await fetch('http://localhost:3030/api/prompts', {
+        const response = await fetch(`${apiUrl}/api/prompts`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -114,18 +118,133 @@ document.addEventListener('DOMContentLoaded', () => {
           throw new Error('Failed to add prompt');
         }
       } catch (error) {
-        console.error('Error:', error);
-        showNotification('Error adding prompt', 'error');
+        console.error('Error saving prompt:', error);
+        
+        // Show error but keep modal open to let user try again or modify data
+        showNotification('Unable to save prompt: ' + getConnectionErrorMessage(error), 'error');
+        
+        // Make sure our buttons stay functional
+        ensureButtonsFunctional();
       }
     });
   }
 
-  // Settings button handler
+  // Settings button handler (consistent with Add Custom approach)
   const settingsBtn = document.getElementById('settings');
+  const settingsModal = document.getElementById('settingsModal');
+
   if (settingsBtn) {
+    // DON'T replace the button - just add the event listener
     settingsBtn.addEventListener('click', (e) => {
       e.preventDefault();
-      showNotification('Settings coming soon!');
+      console.log('Settings button clicked (initial)');
+      
+      if (settingsModal) {
+        console.log('Opening settings modal');
+        settingsModal.classList.add('active');
+        
+        // Pre-fill current settings
+        try {
+          const url = new URL(apiUrl);
+          document.getElementById('apiHost').value = url.hostname;
+          document.getElementById('apiPort').value = url.port || '3030';
+          
+          // Also update preview
+          const previewHost = document.getElementById('previewHost');
+          const previewPort = document.getElementById('previewPort');
+          if (previewHost) previewHost.textContent = url.hostname;
+          if (previewPort) previewPort.textContent = url.port || '3030';
+        } catch (error) {
+          console.error('Error parsing API URL:', error);
+        }
+      } else {
+        console.error('Settings modal not found in the DOM');
+      }
+    });
+  }
+  
+  // Make sure the cancel button in the settings modal works properly
+  document.querySelectorAll('.close-settings-modal').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (settingsModal) {
+        settingsModal.classList.remove('active');
+      }
+    });
+  });
+    
+  
+  // Preview API URL as user types
+  const apiHostInput = document.getElementById('apiHost');
+  const apiPortInput = document.getElementById('apiPort');
+  const previewHost = document.getElementById('previewHost');
+  const previewPort = document.getElementById('previewPort');
+  
+  if (apiHostInput && previewHost) {
+    apiHostInput.addEventListener('input', function() {
+      previewHost.textContent = this.value || 'localhost';
+    });
+  }
+  
+  if (apiPortInput && previewPort) {
+    apiPortInput.addEventListener('input', function() {
+      previewPort.textContent = this.value || '3030';
+    });
+  }
+  
+  // Save settings form
+  const settingsForm = document.getElementById('settingsForm');
+  if (settingsForm) {
+    settingsForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      const host = document.getElementById('apiHost').value.trim();
+      const port = document.getElementById('apiPort').value.trim();
+      
+      // Basic validation
+      if (!host) {
+        showNotification('Please enter a valid host', 'error');
+        return;
+      }
+      
+      if (!port || isNaN(parseInt(port))) {
+        showNotification('Please enter a valid port number', 'error');
+        return;
+      }
+      
+      // Save the settings
+      saveSettings(host, port);
+      
+      // Close modal and show confirmation
+      const settingsModal = document.getElementById('settingsModal');
+      if (settingsModal) {
+        settingsModal.classList.remove('active');
+      }
+      
+      showNotification('Settings saved successfully');
+      
+      // Important: Make sure buttons remain functional before testing connection
+      ensureButtonsFunctional();
+      
+      // Test the new connection after a short delay, but don't let it break UI
+      setTimeout(async () => {
+        try {
+          const success = await fetchCustomPrompts(true);
+          if (!success) {
+            // If connection fails, show a more helpful message
+            showNotification(`API connection failed with ${host}:${port}. UI remains functional.`, 'error');
+            
+            // Critical: Make sure buttons remain functional again after failed connection
+            ensureButtonsFunctional();
+          }
+        } catch (error) {
+          console.error("Connection test error:", error);
+          // Ensure buttons remain functional even if test fails
+          ensureButtonsFunctional();
+        }
+        
+        // Add a final call to ensure buttons are functional regardless of connection outcome
+        setTimeout(ensureButtonsFunctional, 100);
+      }, 500);
     });
   }
   
@@ -189,7 +308,146 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+  
+  // Make sure buttons stay functional even if initial API connection fails
+  ensureButtonsFunctional();
 });
+
+// Load settings from storage
+function loadSettings() {
+  // Load settings from chrome.storage
+  chrome.storage.sync.get(['apiUrl'], function(result) {
+    if (result.apiUrl) {
+      apiUrl = result.apiUrl;
+      console.log('Loaded API URL from settings:', apiUrl);
+      
+      // Update any UI elements that display the current settings
+      const apiHostInput = document.getElementById('apiHost');
+      const apiPortInput = document.getElementById('apiPort');
+      
+      if (apiHostInput && apiPortInput) {
+        try {
+          const url = new URL(apiUrl);
+          apiHostInput.value = url.hostname;
+          apiPortInput.value = url.port || '3030';
+        } catch (error) {
+          console.error('Error parsing stored API URL:', error);
+        }
+      }
+    }
+  });
+}
+
+// Save settings to storage
+function saveSettings(host, port) {
+  // Construct the full URL
+  const newApiUrl = `http://${host}:${port}`;
+  
+  // Save to chrome.storage
+  chrome.storage.sync.set({ apiUrl: newApiUrl }, function() {
+    console.log('API URL saved:', newApiUrl);
+    apiUrl = newApiUrl;
+  });
+}
+
+// Simplified version that doesn't use attributes
+function ensureButtonsFunctional() {
+  console.log('Checking button functionality');
+
+  // For Settings button: add listener only if not already attached.
+  const settingsBtn = document.getElementById('settings');
+  if (settingsBtn && !settingsBtn.dataset.listenerAttached) {
+    settingsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      console.log('Settings button clicked');
+      const settingsModal = document.getElementById('settingsModal');
+      if (settingsModal) {
+        settingsModal.classList.add('active');
+        // Pre-fill current settings
+        try {
+          const url = new URL(apiUrl);
+          const apiHostInput = document.getElementById('apiHost');
+          const apiPortInput = document.getElementById('apiPort');
+          if (apiHostInput) apiHostInput.value = url.hostname;
+          if (apiPortInput) apiPortInput.value = url.port || '3030';
+          const previewHost = document.getElementById('previewHost');
+          const previewPort = document.getElementById('previewPort');
+          if (previewHost) previewHost.textContent = url.hostname;
+          if (previewPort) previewPort.textContent = url.port || '3030';
+        } catch (error) {
+          console.error('Error parsing API URL:', error);
+        }
+      }
+    });
+    settingsBtn.dataset.listenerAttached = "true";
+  }
+
+  // For Add Custom button: attach the listener once.
+  const addCustomBtn = document.getElementById('addCustom');
+  if (addCustomBtn && !addCustomBtn.dataset.listenerAttached) {
+    addCustomBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      console.log('Add Custom button clicked');
+      const addCustomModal = document.getElementById('addCustomModal');
+      if (addCustomModal) {
+        addCustomModal.classList.add('active');
+      }
+    });
+    addCustomBtn.dataset.listenerAttached = "true";
+  }
+}
+
+
+// Helper function to get a user-friendly error message
+function getConnectionErrorMessage(error) {
+  if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+    return 'API connection failed. Check your settings.';
+  } else if (error.message.includes('timed out')) {
+    return 'Connection timed out.';
+  } else if (error.message.includes('CORS')) {
+    return 'CORS policy error.';
+  }
+  return error.message;
+}
+
+// Add this to make the error more visible but non-blocking
+function showApiConnectionError(host, port) {
+  showNotification(`API connection to ${host}:${port} failed. Check your settings.`, 'error');
+  
+  // Optional: Add a visible indicator in the UI that API is disconnected
+  const container = document.querySelector('.container');
+  if (container) {
+    const disconnectBanner = document.createElement('div');
+    disconnectBanner.className = 'api-disconnect-banner';
+    disconnectBanner.innerHTML = `
+      <div style="background-color: rgba(255, 60, 60, 0.1); color: #ff3b30; padding: 8px 12px; margin: 8px 12px; border-radius: 4px; font-size: 12px; display: flex; justify-content: space-between; align-items: center;">
+        <span>API Connection Failed: ${host}:${port}</span>
+        <button id="reconnectBtn" style="background: #444; color: white; border: none; padding: 4px 8px; border-radius: 3px; font-size: 11px; cursor: pointer;">Retry</button>
+      </div>
+    `;
+    
+    // Insert after header
+    const header = document.querySelector('.header');
+    if (header && header.nextSibling) {
+      container.insertBefore(disconnectBanner, header.nextSibling);
+    } else {
+      container.appendChild(disconnectBanner);
+    }
+    
+    // Add reconnect functionality
+    document.getElementById('reconnectBtn').addEventListener('click', () => {
+      disconnectBanner.remove();
+      fetchCustomPrompts(true);
+    });
+    
+    // Auto-remove after 10 seconds
+    setTimeout(() => {
+      if (disconnectBanner.parentNode) {
+        disconnectBanner.remove();
+      }
+    }, 10000);
+  }
+}
 
 // Collect built-in prompts from the DOM
 function collectBuiltInPrompts() {
@@ -295,17 +553,17 @@ function addPromptClickHandler(card) {
   });
 }
 
-// Fetch custom prompts from localhost API
+// Fetch custom prompts from API
 async function fetchCustomPrompts(showNotifications = false) {
   try {
     if (showNotifications) {
-      showNotification('Fetching prompts from local API...');
+      showNotification('Fetching prompts from API...');
     }
     
-    console.log('Attempting to fetch custom prompts from http://localhost:3030/api/prompts');
+    console.log(`Attempting to fetch custom prompts from ${apiUrl}/api/prompts`);
     
-    // Simple fetch approach
-    const response = await fetch('http://localhost:3030/api/prompts');
+    // Use the dynamic apiUrl
+    const response = await fetch(`${apiUrl}/api/prompts`);
     console.log('API response:', response);
     
     if (!response.ok) {
@@ -336,11 +594,11 @@ async function fetchCustomPrompts(showNotifications = false) {
     console.error('Could not fetch custom prompts:', error);
     
     if (showNotifications) {
-      let errorMessage = 'Could not connect to local API';
+      let errorMessage = `Could not connect to API at ${apiUrl}`;
       
       // Provide more specific error messages
       if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
-        errorMessage = 'API server not running on localhost:3030';
+        errorMessage = `API server not running at ${apiUrl}`;
       } else if (error.message.includes('timed out')) {
         errorMessage = 'Connection to API timed out';
       } else if (error.message.includes('CORS')) {
@@ -349,6 +607,12 @@ async function fetchCustomPrompts(showNotifications = false) {
       
       showNotification(errorMessage, 'error');
     }
+    
+    // Instead of disabling buttons, just use default prompts and allow UI to continue functioning
+    console.log('Connection failed but keeping UI functional');
+    
+    // Make sure UI is responsive even when API fails
+    ensureButtonsFunctional();
     
     return false; // Failed
   }
@@ -567,11 +831,6 @@ function createPromptCard(prompt) {
   return card;
 }
 
-// Clear any existing custom prompts
-function clearCustomPrompts() {
-  // This is now handled by clearAllContent() and renderAllPrompts()
-}
-
 // Setup notification system
 function showNotification(message, type = 'success') {
   const notification = document.getElementById('notification');
@@ -588,12 +847,12 @@ function showNotification(message, type = 'success') {
 // Test API connection
 async function testApiConnection() {
   try {
-    console.log('Testing API connection to http://localhost:3030/api/prompts');
+    console.log(`Testing API connection to ${apiUrl}/api/prompts`);
     
     // Add debug information to console
     console.log('Sending fetch request...');
     
-    const response = await fetch('http://localhost:3030/api/prompts');
+    const response = await fetch(`${apiUrl}/api/prompts`);
     console.log('Response received:', response);
     
     if (!response.ok) {
