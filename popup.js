@@ -539,7 +539,7 @@ function addPromptClickHandler(card) {
       });
 
       if (response && response.success) {
-        showNotification('Prompt inserted successfully');
+        showNotification('Prompt inserted and submitted');
         // Close popup after short delay
         setTimeout(() => window.close(), 1000);
       } else {

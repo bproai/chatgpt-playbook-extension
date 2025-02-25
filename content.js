@@ -69,6 +69,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         // Send success response
         sendResponse({ success: true });
+        
+        // Get current tab ID and call the background script to execute the click
+        setTimeout(() => {
+          chrome.runtime.sendMessage({
+            action: "clickSubmitButton",
+            platform: platform
+          });
+        }, 500);
       } else if (retryCount >= MAX_RETRIES) {
         // Clear interval if max retries reached
         clearInterval(pollingInterval);
