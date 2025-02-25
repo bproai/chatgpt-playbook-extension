@@ -6,12 +6,17 @@ let apiUrl = 'http://localhost:3030'; // Default API URL
 let autoSubmitEnabled = false; // Default to off for auto-submit
 
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('DOM loaded - initializing popup');
+  
   // Load saved settings
   loadSettings();
   loadAutoSubmitSetting();
   
   // Initialize the prompt collection with built-in prompts
   collectBuiltInPrompts();
+  
+  // Load custom prompts from local storage
+  loadLocalPrompts();
   
   // Set up pull prompts button
   const pullPromptsBtn = document.getElementById('pullPrompts');
@@ -37,39 +42,76 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initial fetch of custom prompts from localhost API
   fetchCustomPrompts();
 
-  // Add custom button handler
+  // =============================================
+  // MODAL HANDLING - FIX FOR "ADD CUSTOM" BUTTON
+  // =============================================
+  
+  // Get all modal elements
   const addCustomBtn = document.getElementById('addCustom');
   const addCustomModal = document.getElementById('addCustomModal');
-  const closeModalBtn = document.querySelector('.close-modal');
+  const closeModalBtns = document.querySelectorAll('.close-modal');
   const cancelButton = document.getElementById('cancelButton');
   const addPromptForm = document.getElementById('addPromptForm');
   
+  console.log('Modal elements found:', {
+    addCustomBtn: !!addCustomBtn,
+    addCustomModal: !!addCustomModal,
+    closeModalBtns: closeModalBtns.length,
+    cancelButton: !!cancelButton,
+    addPromptForm: !!addPromptForm
+  });
+  
+  // Fix the Add Custom button functionality
   if (addCustomBtn) {
-    addCustomBtn.addEventListener('click', (e) => {
+    console.log('Adding click handler to Add Custom button');
+    
+    // Remove any existing event listeners by cloning the node
+    const newAddCustomBtn = addCustomBtn.cloneNode(true);
+    addCustomBtn.parentNode.replaceChild(newAddCustomBtn, addCustomBtn);
+    
+    // Add event listener to the cloned button
+    newAddCustomBtn.addEventListener('click', function(e) {
       e.preventDefault();
-      // Show the modal
-      addCustomModal.classList.add('active');
+      console.log('Add Custom button clicked');
+      
+      if (addCustomModal) {
+        console.log('Showing Add Custom modal');
+        // Force display style for maximum compatibility
+        addCustomModal.style.display = 'flex';
+        addCustomModal.classList.add('active');
+      } else {
+        console.error('Add Custom modal not found in the DOM');
+      }
     });
   }
   
-  // Close modal when clicking the X button
-  if (closeModalBtn) {
-    closeModalBtn.addEventListener('click', () => {
-      addCustomModal.classList.remove('active');
+  // Fix modal close buttons
+  closeModalBtns.forEach(btn => {
+    btn.addEventListener('click', function() {
+      console.log('Close modal button clicked');
+      if (addCustomModal) {
+        addCustomModal.style.display = 'none';
+        addCustomModal.classList.remove('active');
+      }
     });
-  }
+  });
   
-  // Close modal when clicking the Cancel button
+  // Fix cancel button
   if (cancelButton) {
-    cancelButton.addEventListener('click', () => {
-      addCustomModal.classList.remove('active');
+    cancelButton.addEventListener('click', function() {
+      console.log('Cancel button clicked');
+      if (addCustomModal) {
+        addCustomModal.style.display = 'none';
+        addCustomModal.classList.remove('active');
+      }
     });
   }
   
-  // Handle form submission
+  // Handle form submission - Save custom prompts locally instead of to API
   if (addPromptForm) {
     addPromptForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      console.log('Form submitted');
       
       // Get form values
       const title = document.getElementById('promptTitle').value;
@@ -88,42 +130,37 @@ document.addEventListener('DOMContentLoaded', () => {
           title,
           category,
           description,
-          is_active: 1
+          createdAt: new Date().toISOString(),
+          isLocal: true
         };
         
-        // Send to API
-        const response = await fetch(`${apiUrl}/api/prompts`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(newPrompt)
+        console.log('Saving new prompt:', newPrompt);
+        
+        // Save to Chrome storage instead of API
+        chrome.storage.sync.get(['customPrompts'], function(result) {
+          const customPrompts = result.customPrompts || [];
+          customPrompts.push(newPrompt);
+          
+          chrome.storage.sync.set({ customPrompts }, function() {
+            // Show success message
+            showNotification('Custom prompt saved successfully');
+            
+            // Reset form and close modal
+            addPromptForm.reset();
+            if (addCustomModal) {
+              addCustomModal.style.display = 'none';
+              addCustomModal.classList.remove('active');
+            }
+            
+            // Add the prompt to the UI
+            addLocalPromptToUI(newPrompt);
+          });
         });
-        
-        if (!response.ok) {
-          throw new Error(`API returned status: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        
-        if (result.status === 'success') {
-          // Show success message
-          showNotification('Prompt added successfully');
-          
-          // Reset form and close modal
-          addPromptForm.reset();
-          addCustomModal.classList.remove('active');
-          
-          // Refresh prompts list
-          fetchCustomPrompts();
-        } else {
-          throw new Error('Failed to add prompt');
-        }
       } catch (error) {
         console.error('Error saving prompt:', error);
         
         // Show error but keep modal open to let user try again or modify data
-        showNotification('Unable to save prompt: ' + getConnectionErrorMessage(error), 'error');
+        showNotification('Unable to save prompt: ' + error.message, 'error');
         
         // Make sure our buttons stay functional
         ensureButtonsFunctional();
@@ -144,6 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (settingsModal) {
         console.log('Opening settings modal');
         settingsModal.classList.add('active');
+        settingsModal.style.display = 'flex';
         
         // Pre-fill current settings
         try {
@@ -176,6 +214,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.close-settings-modal').forEach(btn => {
     btn.addEventListener('click', () => {
       if (settingsModal) {
+        settingsModal.style.display = 'none';
         settingsModal.classList.remove('active');
       }
     });
@@ -235,8 +274,8 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       
       // Close modal and show confirmation
-      const settingsModal = document.getElementById('settingsModal');
       if (settingsModal) {
+        settingsModal.style.display = 'none';
         settingsModal.classList.remove('active');
       }
       
@@ -275,6 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   function showApiHelpModal() {
     if (apiHelpModal) {
+      apiHelpModal.style.display = 'flex';
       apiHelpModal.classList.add('active');
     }
   }
@@ -283,7 +323,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (closeHelpModalBtns) {
     closeHelpModalBtns.forEach(btn => {
       btn.addEventListener('click', () => {
-        apiHelpModal.classList.remove('active');
+        if (apiHelpModal) {
+          apiHelpModal.style.display = 'none';
+          apiHelpModal.classList.remove('active');
+        }
       });
     });
   }
@@ -303,7 +346,10 @@ document.addEventListener('DOMContentLoaded', () => {
           
           // Close the modal after a successful test
           setTimeout(() => {
-            apiHelpModal.classList.remove('active');
+            if (apiHelpModal) {
+              apiHelpModal.style.display = 'none';
+              apiHelpModal.classList.remove('active');
+            }
             fetchCustomPrompts(true);
           }, 1500);
         } else {
@@ -331,6 +377,21 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Make sure buttons stay functional even if initial API connection fails
   ensureButtonsFunctional();
+  
+  // Add CSS for modals if it doesn't exist
+  const existingStyle = document.getElementById('dynamic-modal-styles');
+  if (!existingStyle) {
+    const styleElement = document.createElement('style');
+    styleElement.id = 'dynamic-modal-styles';
+    styleElement.textContent = `
+      .modal.active {
+        display: flex !important;
+      }
+    `;
+    document.head.appendChild(styleElement);
+  }
+  
+  console.log('Popup initialization complete');
 });
 
 // Load settings from storage
@@ -377,6 +438,53 @@ function loadAutoSubmitSetting() {
   });
 }
 
+// Load custom prompts from local storage
+function loadLocalPrompts() {
+  chrome.storage.sync.get(['customPrompts'], function(result) {
+    const customPrompts = result.customPrompts || [];
+    console.log('Loaded local custom prompts:', customPrompts);
+    
+    if (customPrompts.length > 0) {
+      // Convert to the format used by the UI
+      const formattedPrompts = customPrompts.map(p => ({
+        title: p.title,
+        category: p.category,
+        description: p.title, // Use title as description like API prompts
+        prompt: p.description, // The actual prompt text
+        builtIn: false,
+        isLocal: true
+      }));
+      
+      // Add to allPrompts
+      allPrompts = [
+        ...allPrompts.filter(p => !p.isLocal), // Remove any existing local prompts
+        ...formattedPrompts
+      ];
+      
+      renderAllPrompts();
+    }
+  });
+}
+
+// Function to add a single local prompt to the UI
+function addLocalPromptToUI(promptData) {
+  // Convert to UI format
+  const formattedPrompt = {
+    title: promptData.title,
+    category: promptData.category,
+    description: promptData.title,
+    prompt: promptData.description,
+    builtIn: false,
+    isLocal: true
+  };
+  
+  // Add to allPrompts
+  allPrompts.push(formattedPrompt);
+  
+  // Re-render all prompts
+  renderAllPrompts();
+}
+
 // Save settings to storage
 function saveSettings(host, port) {
   // Construct the full URL
@@ -402,6 +510,7 @@ function ensureButtonsFunctional() {
       const settingsModal = document.getElementById('settingsModal');
       if (settingsModal) {
         settingsModal.classList.add('active');
+        settingsModal.style.display = 'flex';
         // Pre-fill current settings
         try {
           const url = new URL(apiUrl);
@@ -436,6 +545,7 @@ function ensureButtonsFunctional() {
       const addCustomModal = document.getElementById('addCustomModal');
       if (addCustomModal) {
         addCustomModal.classList.add('active');
+        addCustomModal.style.display = 'flex';
       }
     });
     addCustomBtn.dataset.listenerAttached = "true";
@@ -647,9 +757,9 @@ async function fetchCustomPrompts(showNotifications = false) {
       if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
         errorMessage = `API server not running at ${apiUrl}`;
       } else if (error.message.includes('timed out')) {
-        errorMessage = 'Connection to API timed out';
+        errorMessage = 'Connection timed out.';
       } else if (error.message.includes('CORS')) {
-        errorMessage = 'CORS policy blocking request';
+        errorMessage = 'CORS policy error.';
       }
       
       showNotification(errorMessage, 'error');
@@ -710,8 +820,9 @@ function processApiPrompts(apiPrompts) {
   
   // Update our global prompts array
   allPrompts = [
-    ...hardcodedPrompts,
-    ...formattedApiPrompts
+    ...hardcodedPrompts, // Keep built-in prompts
+    ...formattedApiPrompts, // Add API prompts
+    ...allPrompts.filter(p => p.isLocal) // Keep local custom prompts
   ];
   
   console.log('ALL PROMPTS AFTER MERGING:', allPrompts);

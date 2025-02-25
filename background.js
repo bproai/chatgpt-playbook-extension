@@ -33,7 +33,7 @@ function clickSubmitButton(platform) {
   console.log(`Attempting to click submit button for ${platform}`);
   
   if (platform === 'chatgpt') {
-    // ChatGPT - Keep the exact same implementation that was working
+    // ChatGPT - Keep the existing implementation that works
     const button = document.querySelector('button[data-testid="send-button"]');
     if (button && !button.disabled) {
       console.log("Found and clicking ChatGPT send button");
@@ -45,7 +45,7 @@ function clickSubmitButton(platform) {
     }
   } 
   else if (platform === 'claude') {
-    // Claude - Based on the HTML snippet you provided
+    // Claude - Based on the HTML snippet provided
     const claudeButton = document.querySelector('button[aria-label="Send Message"]');
     if (claudeButton && !claudeButton.disabled) {
       console.log("Found and clicking Claude send button");
