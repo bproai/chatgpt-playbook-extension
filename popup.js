@@ -975,16 +975,31 @@ function createPromptCard(prompt) {
     displayDescription = shortDesc + (prompt.prompt.length > 40 ? '...' : '');
   }
   
+  // Create the base HTML for the card
   card.innerHTML = `
     <div>
       <div class="playbook-title">${prompt.title || 'Untitled'}</div>
       <div class="playbook-description">${displayDescription}</div>
     </div>
-    <span class="action-icon">→</span>
+    <div class="card-actions">
+      ${prompt.isLocal ? '<span class="delete-icon" title="Delete prompt">×</span>' : ''}
+      <span class="action-icon">→</span>
+    </div>
   `;
   
   // Add click event handler to the prompt
   addPromptClickHandler(card);
+  
+  // Add delete handler if it's a local prompt
+  if (prompt.isLocal) {
+    const deleteIcon = card.querySelector('.delete-icon');
+    if (deleteIcon) {
+      deleteIcon.addEventListener('click', (e) => {
+        e.stopPropagation(); // Prevent the card click event from firing
+        deleteLocalPrompt(prompt.title);
+      });
+    }
+  }
   
   return card;
 }
@@ -1029,4 +1044,37 @@ async function testApiConnection() {
     console.error('Test connection error:', error);
     return { success: false, error: error.message };
   }
+}
+
+// Add new function to delete a local prompt
+function deleteLocalPrompt(promptTitle) {
+  // Confirm deletion
+  if (!confirm(`Are you sure you want to delete the prompt "${promptTitle}"?`)) {
+    return;
+  }
+  
+  chrome.storage.sync.get(['customPrompts'], function(result) {
+    const customPrompts = result.customPrompts || [];
+    
+    // Find the prompt to delete by title
+    const updatedPrompts = customPrompts.filter(p => p.title !== promptTitle);
+    
+    // If nothing was removed, show error
+    if (updatedPrompts.length === customPrompts.length) {
+      showNotification('Prompt not found', 'error');
+      return;
+    }
+    
+    // Save the updated list back to storage
+    chrome.storage.sync.set({ customPrompts: updatedPrompts }, function() {
+      // Remove the prompt from allPrompts array
+      allPrompts = allPrompts.filter(p => !(p.isLocal && p.title === promptTitle));
+      
+      // Re-render all prompts
+      renderAllPrompts();
+      
+      // Show success message
+      showNotification('Prompt deleted successfully');
+    });
+  });
 }
