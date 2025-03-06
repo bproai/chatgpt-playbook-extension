@@ -20,6 +20,53 @@ function getCurrentPlatform() {
   return null;
 }
 
+// Toggle search button state (enabled/disabled)
+function toggleSearchButton(enabled) {
+  console.log("Setting search button state to:", enabled ? "enabled" : "disabled");
+  
+  const platform = getCurrentPlatform();
+  if (!platform) return;
+  
+  // Find search button
+  let searchButton = document.querySelector('button[aria-label="Search"]');
+  
+  if (!searchButton) {
+    console.log("Search button not found, will try again later");
+    // Schedule a retry if button not found
+    setTimeout(() => toggleSearchButton(enabled), 2000);
+    return;
+  }
+  
+  console.log("Found search button:", searchButton);
+  
+  // Check current state
+  const ariaPressed = searchButton.getAttribute('aria-pressed');
+  const isCurrentlyEnabled = ariaPressed === 'true';
+  console.log("Current search button state:", isCurrentlyEnabled ? "enabled" : "disabled");
+  
+  // Only change state if different from current
+  if (isCurrentlyEnabled !== enabled) {
+    console.log("Changing search button state");
+    
+    // Click the button to toggle state if needed
+    searchButton.click();
+    
+    // Schedule verification to ensure it worked
+    setTimeout(() => {
+      const nowPressed = searchButton.getAttribute('aria-pressed');
+      console.log("Verification - button state now:", nowPressed === 'true' ? "enabled" : "disabled");
+      
+      // If state doesn't match expected state, try again
+      if ((nowPressed === 'true') !== enabled) {
+        console.log("Button state still doesn't match desired state, trying again");
+        searchButton.click();
+      }
+    }, 300);
+  } else {
+    console.log("Search button already in desired state");
+  }
+}
+
 // Message handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log("Received message:", request);
@@ -92,6 +139,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
     // Keep message channel open for async response
     return true;
+  }
+  
+  // Handle toggle search button message
+  if (request.action === "toggleSearch") {
+    toggleSearchButton(request.enabled);
+    sendResponse({ success: true });
+    return true;
+  }
+});
+
+// When content script loads, check if search should be enabled/disabled
+chrome.storage.sync.get(['searchEnabled'], function(result) {
+  if (typeof result.searchEnabled !== 'undefined') {
+    const searchEnabled = result.searchEnabled;
+    console.log('Initial search button setting:', searchEnabled);
+    
+    // Apply the setting after a delay to ensure page has loaded
+    setTimeout(() => {
+      toggleSearchButton(searchEnabled);
+    }, 2000);
   }
 });
 

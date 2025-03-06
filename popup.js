@@ -4,6 +4,7 @@
 let allPrompts = [];
 let apiUrl = 'http://localhost:3030'; // Default API URL
 let autoSubmitEnabled = false; // Default to off for auto-submit
+let searchEnabled = false; // Default to off for search button
 
 document.addEventListener('DOMContentLoaded', () => {
   console.log('DOM loaded - initializing popup');
@@ -11,6 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Load saved settings
   loadSettings();
   loadAutoSubmitSetting();
+  loadSearchSetting(); // Load search button setting
   
   // Initialize the prompt collection with built-in prompts
   collectBuiltInPrompts();
@@ -196,6 +198,12 @@ document.addEventListener('DOMContentLoaded', () => {
             autoSubmitToggle.checked = autoSubmitEnabled;
           }
           
+          // Search toggle
+          const searchToggle = document.getElementById('searchToggle');
+          if (searchToggle) {
+            searchToggle.checked = searchEnabled;
+          }
+          
           // Also update preview
           const previewHost = document.getElementById('previewHost');
           const previewPort = document.getElementById('previewPort');
@@ -253,6 +261,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const autoSubmitToggle = document.getElementById('autoSubmitToggle');
       const newAutoSubmitEnabled = autoSubmitToggle ? autoSubmitToggle.checked : false;
       
+      // Get search button setting
+      const searchToggle = document.getElementById('searchToggle');
+      const newSearchEnabled = searchToggle ? searchToggle.checked : false;
+      
       // Basic validation
       if (!host) {
         showNotification('Please enter a valid host', 'error');
@@ -271,6 +283,24 @@ document.addEventListener('DOMContentLoaded', () => {
       chrome.storage.sync.set({ autoSubmitEnabled: newAutoSubmitEnabled }, function() {
         console.log('Auto-submit setting saved:', newAutoSubmitEnabled);
         autoSubmitEnabled = newAutoSubmitEnabled;
+      });
+      
+      // Save search setting
+      chrome.storage.sync.set({ searchEnabled: newSearchEnabled }, function() {
+        console.log('Search setting saved:', newSearchEnabled);
+        searchEnabled = newSearchEnabled;
+        
+        // Send message to update search button state in active tab
+        chrome.tabs.query({ active: true, currentWindow: true }, function(tabs) {
+          if (tabs && tabs[0] && tabs[0].id) {
+            chrome.tabs.sendMessage(tabs[0].id, {
+              action: "toggleSearch",
+              enabled: newSearchEnabled
+            }).catch(error => {
+              console.log("Could not toggle search button:", error);
+            });
+          }
+        });
       });
       
       // Close modal and show confirmation
@@ -438,6 +468,25 @@ function loadAutoSubmitSetting() {
   });
 }
 
+// Load search button setting
+function loadSearchSetting() {
+  chrome.storage.sync.get(['searchEnabled'], function(result) {
+    if (typeof result.searchEnabled !== 'undefined') {
+      searchEnabled = result.searchEnabled;
+      console.log('Loaded search button setting:', searchEnabled);
+      
+      // Update toggle in settings if it exists
+      const searchToggle = document.getElementById('searchToggle');
+      if (searchToggle) {
+        searchToggle.checked = searchEnabled;
+      }
+    } else {
+      // If setting doesn't exist yet, initialize it to false (off)
+      chrome.storage.sync.set({ searchEnabled: false });
+    }
+  });
+}
+
 // Load custom prompts from local storage
 function loadLocalPrompts() {
   chrome.storage.sync.get(['customPrompts'], function(result) {
@@ -527,6 +576,12 @@ function ensureButtonsFunctional() {
           const autoSubmitToggle = document.getElementById('autoSubmitToggle');
           if (autoSubmitToggle) {
             autoSubmitToggle.checked = autoSubmitEnabled;
+          }
+          
+          // Search toggle
+          const searchToggle = document.getElementById('searchToggle');
+          if (searchToggle) {
+            searchToggle.checked = searchEnabled;
           }
         } catch (error) {
           console.error('Error parsing API URL:', error);
