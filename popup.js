@@ -13,6 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   loadAutoSubmitSetting();
   loadSearchSetting(); // Load search button setting
+  loadTrackingSettings(); // Add this line
   
   // Initialize the prompt collection with built-in prompts
   collectBuiltInPrompts();
@@ -203,6 +204,13 @@ document.addEventListener('DOMContentLoaded', () => {
           if (searchToggle) {
             searchToggle.checked = searchEnabled;
           }
+
+          const trackQAToggle = document.getElementById('trackQA');
+          if (trackQAToggle) {
+            chrome.storage.sync.get(['trackQA'], function(result) {
+              trackQAToggle.checked = result.trackQA === undefined ? false : result.trackQA;
+            });
+          }
           
           // Also update preview
           const previewHost = document.getElementById('previewHost');
@@ -265,6 +273,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const searchToggle = document.getElementById('searchToggle');
       const newSearchEnabled = searchToggle ? searchToggle.checked : false;
       
+      // Get Q&A tracking setting - Add this line
+      const trackQAToggle = document.getElementById('trackQA');
+      const trackQA = trackQAToggle ? trackQAToggle.checked : false;
+      
       // Basic validation
       if (!host) {
         showNotification('Please enter a valid host', 'error');
@@ -302,7 +314,12 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         });
       });
-      
+
+      // Save tracking setting - Add this block
+      chrome.storage.sync.set({ trackQA: trackQA }, function() {
+        console.log('Q&A tracking setting saved:', trackQA);
+      });
+
       // Close modal and show confirmation
       if (settingsModal) {
         settingsModal.style.display = 'none';
@@ -423,6 +440,18 @@ document.addEventListener('DOMContentLoaded', () => {
   
   console.log('Popup initialization complete');
 });
+
+
+// Load tracking setting
+function loadTrackingSettings() {
+  chrome.storage.sync.get(['trackQA'], function(result) {
+    const trackQAToggle = document.getElementById('trackQA');
+    if (trackQAToggle) {
+      trackQAToggle.checked = result.trackQA === undefined ? false : result.trackQA;
+    }
+  });
+}
+
 
 // Load settings from storage
 function loadSettings() {
@@ -582,6 +611,14 @@ function ensureButtonsFunctional() {
           const searchToggle = document.getElementById('searchToggle');
           if (searchToggle) {
             searchToggle.checked = searchEnabled;
+          }
+
+          // Q&A tracking toggle
+          const trackQAToggle = document.getElementById('trackQA');
+          if (trackQAToggle) {
+            chrome.storage.sync.get(['trackQA'], function(result) {
+              trackQAToggle.checked = result.trackQA === undefined ? false : result.trackQA;
+            });
           }
         } catch (error) {
           console.error('Error parsing API URL:', error);
