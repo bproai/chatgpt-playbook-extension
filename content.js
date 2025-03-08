@@ -98,7 +98,7 @@ function startAnswerMonitoring(questionText) {
   // Check if tracking is enabled in settings
   chrome.storage.sync.get(['trackQA'], function(result) {
     const trackQA = result.trackQA === undefined ? false : result.trackQA;
-    console.log("Q&A tracking enabled:", trackQA); // Move the console log here
+    console.log("Q&A tracking enabled:", trackQA);
     
     if (!trackQA) {
       console.log("Q&A tracking is disabled in settings");
@@ -126,257 +126,264 @@ function startAnswerMonitoring(questionText) {
   });
 }
 
+// Scan for existing answers on page load
 function scanForExistingAnswers() {
-  // Use the appropriate selector based on platform; here, we assume ChatGPT
   const answerElements = document.querySelectorAll(CHATGPT_ANSWER_SELECTOR);
   answerElements.forEach(answer => {
-    // Check if this answer has already been processed to avoid duplicate work
+    // Check if this answer has already been processed
     if (!answer.dataset.qaProcessed) {
       // Ensure the answer is complete
-      if (!answer.querySelector('[aria-busy="true"]')) {
+      if (!answer.querySelector('[aria-busy="true"]') && isAnswerComplete(answer)) {
         console.log("Found existing complete answer; processing now.");
         processAnswer(answer);
-        // Mark the answer as processed
-        answer.dataset.qaProcessed = "true";
       }
     }
   });
 }
 
+// Extract rich HTML and text content from an answer element
+function extractRichAnswer(answerElement) {
+  // Try to locate the rich content container
+  let container = answerElement.querySelector('.markdown.prose') ||
+                  answerElement.querySelector('.markdown') ||
+                  answerElement.querySelector('.prose');
+  
+  // Fallback: if no specific container is found, use the entire answer element
+  if (!container) {
+    container = answerElement;
+  }
+  
+  // Use outerHTML to capture all the rich HTML content
+  const htmlContent = container.outerHTML.trim();
+  
+  // Also capture the plain text for search or indexing purposes
+  const plainText = container.innerText.trim();
+  
+  return { plain_text: plainText, html: htmlContent };
+}
 
-// Helper to process a found answer element
-// Existing processAnswer function, possibly updated as needed
+// Check if an answer is complete by looking for UI elements that appear when generation is done
+function isAnswerComplete(answerElement) {
+  // We need to look for buttons outside the answer element itself
+  // First, find the article that contains everything
+  const article = answerElement.closest('article');
+  
+  if (!article) {
+    console.log("DETECTION ISSUE: Answer element is not within an article element");
+    return false;
+  }
+  
+  // Now look for buttons within this article
+  const copyButton = article.querySelector('button[aria-label="Copy"]');
+  const thumbsButtons = article.querySelectorAll('button[aria-label="Good response"], button[aria-label="Bad response"]');
+  const readAloudButton = article.querySelector('button[aria-label="Read aloud"]');
+  
+  // If we find these UI elements, the answer is complete
+  const hasCompletionUI = copyButton || thumbsButtons.length > 0 || readAloudButton;
+  
+  // Also make sure there's no loading indicator
+  const isStillLoading = !!answerElement.querySelector('[aria-busy="true"]');
+  
+  // Check for streaming indicators
+  const isStreaming = answerElement.querySelector('.result-streaming') || 
+                      answerElement.querySelector('.result-thinking');
+  
+  console.log("Answer completion check:", {
+    hasCopyButton: !!copyButton,
+    hasThumbsButtons: thumbsButtons.length > 0,
+    hasReadAloudButton: !!readAloudButton,
+    isStillLoading: isStillLoading,
+    isStreaming: !!isStreaming,
+    messageId: answerElement.getAttribute('data-message-id')
+  });
+  
+  return hasCompletionUI && !isStillLoading && !isStreaming;
+}
+
+// Validate if an answer is complete and worth storing
+function isValidAnswer(richAnswer, modelInfo, answerElement) {
+  // Log some details for debugging
+  console.log("Validating answer:", {
+    modelInfo,
+    plainTextLength: richAnswer.plain_text?.length || 0,
+    htmlSnippet: richAnswer.html?.substring(0, 100) + "..." || "none"
+  });
+
+  // Check if model information is missing or incomplete
+  if (!modelInfo || modelInfo.model === 'unknown' || modelInfo.modelSlug === null) {
+    console.log("VALIDATION FAILED: Model information incomplete", { model: modelInfo?.model, slug: modelInfo?.modelSlug });
+    return false;
+  }
+  
+  // Check if the answer is the "thinking" placeholder
+  if (richAnswer.html && (
+      richAnswer.html.includes('result-thinking') || 
+      richAnswer.html.includes('result-streaming') ||
+      richAnswer.plain_text === '\u200b' || 
+      richAnswer.plain_text.trim() === '')) {
+    console.log("VALIDATION FAILED: Detected empty/placeholder/streaming answer", { 
+      hasThinking: richAnswer.html?.includes('result-thinking'),
+      hasStreaming: richAnswer.html?.includes('result-streaming'),
+      isZeroWidth: richAnswer.plain_text === '\u200b',
+      isEmpty: richAnswer.plain_text.trim() === ''
+    });
+    return false;
+  }
+  
+  // Check for UI elements that indicate a complete answer
+  // This check should use the article parent to find UI elements
+  const article = answerElement.closest('article');
+  const hasCompletionUI = article && (
+      article.querySelector('button[aria-label="Copy"]') ||
+      article.querySelector('button[aria-label="Good response"]') ||
+      article.querySelector('button[aria-label="Bad response"]')
+  );
+  
+  if (!hasCompletionUI) {
+    console.log("VALIDATION FAILED: Missing completion UI elements in article parent");
+    return false;
+  }
+  
+  // Check for truncated sentences (ending without proper punctuation)
+  const text = richAnswer.plain_text || '';
+  const lastChar = text.trim().slice(-1);
+  const properEndings = ['.', '!', '?', ':', ';', '"', "'", ')', ']', '}'];
+  
+  // If text is longer than 100 chars and doesn't end with proper punctuation,
+  // it might be truncated
+  if (text.length > 100 && !properEndings.includes(lastChar)) {
+    const lastWord = text.trim().split(/\s+/).pop() || '';
+    // If the last word is very short (less than 3 chars), it's likely truncated
+    if (lastWord.length < 3 || /^[a-z]/.test(lastWord)) {
+      console.log("VALIDATION FAILED: Detected likely truncated answer", {
+        lastChar,
+        lastWord,
+        properEnding: properEndings.includes(lastChar)
+      });
+      return false;
+    }
+  }
+  
+  // Check minimum content length
+  if (!richAnswer.plain_text || richAnswer.plain_text.trim().length < 3) {
+    console.log("VALIDATION FAILED: Answer too short or empty", {
+      length: richAnswer.plain_text?.trim().length
+    });
+    return false;
+  }
+  
+  console.log("VALIDATION PASSED: Answer is complete and valid");
+  return true;
+}
+
+// Process a found answer element
 function processAnswer(latestAnswer) {
-  // Skip if this answer element was already processed.
+  // Skip if this answer element was already processed
   if (latestAnswer.dataset.qaProcessed === "true") {
     console.log("Answer already processed, skipping duplicate.");
     return;
   }
   
-  // Mark this element as processed.
-  latestAnswer.dataset.qaProcessed = "true";
+  // Extract answer text and model info
+  const richAnswer = extractRichAnswer(latestAnswer);
+  const modelInfo = extractModelInfo(latestAnswer, getCurrentPlatform());
   
-  // Extract answer text using your existing logic.
-  const answerText = extractAnswerText(latestAnswer);
-  // If answerText is empty or only a zero‑width space, do not proceed.
-  if (answerText.trim() === "" || answerText.trim() === "​") {
-    console.log("Extracted answer text is empty or invalid, skipping.");
+  // Validate the answer before storing it - pass the answer element too
+  if (!isValidAnswer(richAnswer, modelInfo, latestAnswer)) {
+    console.log("Answer validation failed, not storing but will continue monitoring");
+    
+    // Don't mark as processed, so we can try again
+    // Instead, mark with a "pending" flag to indicate we need to check again
+    latestAnswer.dataset.qaPending = "true";
+    
+    // Set up a retry for this specific answer after a delay
+    setTimeout(() => {
+      if (latestAnswer.dataset.qaProcessed !== "true") {
+        console.log("Retrying processing of previously incomplete answer");
+        // Get the answer again (it might have been updated)
+        const updatedRichAnswer = extractRichAnswer(latestAnswer);
+        const updatedModelInfo = extractModelInfo(latestAnswer, getCurrentPlatform());
+        
+        if (isValidAnswer(updatedRichAnswer, updatedModelInfo, latestAnswer)) {
+          console.log("Answer is now valid, processing");
+          storeValidAnswer(latestAnswer, updatedRichAnswer, updatedModelInfo);
+        } else {
+          console.log("Answer still invalid after retry");
+        }
+      }
+    }, 5000); // Check again after 5 seconds
+    
     return;
   }
   
-  const modelInfo = extractModelInfo(latestAnswer, getCurrentPlatform());
+  // Answer is valid, store it
+  storeValidAnswer(latestAnswer, richAnswer, modelInfo);
+}
+
+// Store a validated answer
+function storeValidAnswer(answerElement, richAnswer, modelInfo) {
+  // Mark as processed
+  answerElement.dataset.qaProcessed = "true";
+  
+  const answerJsonString = JSON.stringify(richAnswer);
   const answerTimestamp = new Date().toISOString();
   
-  // Get the conversation turn element to extract turn number.
-  const turnElement = latestAnswer.closest(CHATGPT_CONVERSATION_TURN);
+  // Get the conversation turn element to extract turn number
+  const turnElement = answerElement.closest(CHATGPT_CONVERSATION_TURN);
   const turnNumber = turnElement
     ? turnElement.getAttribute('data-testid')?.replace('conversation-turn-', '')
     : null;
   
-  // Store the answer data.
+  // Store the answer data
   storeAnswerData({
     id: `a_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
     question_id: questionId,
-    message_id: latestAnswer.getAttribute('data-message-id'),
+    message_id: answerElement.getAttribute('data-message-id'),
     platform: getCurrentPlatform(),
-    answer: answerText,
+    answer: answerJsonString,
     model: modelInfo.model,
     timestamp: answerTimestamp,
     turn_number: turnNumber ? parseInt(turnNumber) : null,
     metadata: JSON.stringify({
-      messageAttributes: extractMessageAttributes(latestAnswer),
+      messageAttributes: extractMessageAttributes(answerElement),
       modelSlug: modelInfo.modelSlug
     })
   });
   
   isWaitingForAnswer = false;
-  
-  // Disconnect observer if needed.
-  if (answerObserver) {
-    answerObserver.disconnect();
-  }
 }
 
-
-// Set up an initial scan after the page loads
-window.addEventListener('load', () => {
-  // Give the page a moment to render all existing answers (adjust delay as needed)
-  setTimeout(() => {
-    console.log("Scanning for pre-rendered answers after page load...");
-    scanForExistingAnswers();
-  }, 2000);
-});
-
-
-// Adjusted answer monitoring with fallback check
-function setupAnswerObserver(platform) {
-  // Disconnect any existing observer
-  if (answerObserver) {
-    answerObserver.disconnect();
-  }
+// Check for pending answers that might now be complete
+function scanForPendingAnswers() {
+  const platform = getCurrentPlatform();
+  if (!platform) return;
   
   const answerSelector = platform === 'claude' ? CLAUDE_ANSWER_SELECTOR : CHATGPT_ANSWER_SELECTOR;
+  const pendingAnswers = document.querySelectorAll(`${answerSelector}[data-qa-pending="true"]:not([data-qa-processed="true"])`);
   
-  // Find the conversation container
-  const conversationContainer = document.querySelector('main') || document;
+  console.log(`Found ${pendingAnswers.length} pending answers to check`);
   
-  // Create a mutation observer to watch for new answers
-  answerObserver = new MutationObserver((mutations) => {
-    if (!isWaitingForAnswer) return;
-    
-    for (const mutation of mutations) {
-      if (mutation.type === 'childList' || mutation.type === 'subtree') {
-        const answerElements = document.querySelectorAll(answerSelector);
-        if (answerElements.length > 0) {
-          const latestAnswer = answerElements[answerElements.length - 1];
-          // Check if answer is complete
-          if (!latestAnswer.querySelector('[aria-busy="true"]') && isWaitingForAnswer) {
-            console.log("Mutation observer found complete answer; processing after delay");
-            setTimeout(() => processAnswer(latestAnswer), 500);
-            break;
-          }
-        }
+  pendingAnswers.forEach(answer => {
+    // Check if it's now complete
+    if (isAnswerComplete(answer)) {
+      console.log("Found a pending answer that's now complete");
+      const richAnswer = extractRichAnswer(answer);
+      const modelInfo = extractModelInfo(answer, platform);
+      
+      if (isValidAnswer(richAnswer, modelInfo)) {
+        console.log("Pending answer is now valid, processing");
+        storeValidAnswer(answer, richAnswer, modelInfo);
+      } else {
+        console.log("Pending answer still invalid");
       }
     }
   });
-  
-  answerObserver.observe(conversationContainer, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['data-message-id', 'aria-busy']
-  });
-  
-  console.log("Answer observer set up for platform:", platform);
-  
-  // Fallback: Check after a short delay in case the answer was already present
-  setTimeout(() => {
-    if (isWaitingForAnswer) {
-      const answerElements = document.querySelectorAll(answerSelector);
-      if (answerElements.length > 0) {
-        const latestAnswer = answerElements[answerElements.length - 1];
-        if (!latestAnswer.querySelector('[aria-busy="true"]')) {
-          console.log("Fallback check: found an answer element; processing now");
-          processAnswer(latestAnswer);
-        }
-      }
-    }
-  }, 1000);
 }
 
+// Set up periodic scan for pending answers
+setInterval(scanForPendingAnswers, 10000);
 
-// Extract text from an answer element
-function extractAnswerText(answerElement) {
-  const markdownElement = answerElement.querySelector('.markdown.prose') ||
-                          answerElement.querySelector('.markdown') ||
-                          answerElement.querySelector('.prose');
-
-  if (markdownElement) {
-    const paragraphs = Array.from(markdownElement.querySelectorAll('p, table'));
-    if (paragraphs.length > 0) {
-      // Try using innerText first
-      let combinedText = paragraphs.map(p => p.innerText.trim()).join('\n\n').trim();
-      // If innerText yields nothing, fall back to textContent
-      if (!combinedText) {
-        combinedText = paragraphs.map(p => p.textContent.trim()).join('\n\n').trim();
-      }
-      return combinedText;
-    }
-    // Fallback for markdown element
-    let text = markdownElement.innerText.trim();
-    if (!text) {
-      text = markdownElement.textContent.trim();
-    }
-    return text;
-  }
-  
-  // Check for alternative text containers
-  const textContainer = answerElement.querySelector('[data-is-last-node]') ||
-                        answerElement.querySelector('[data-is-only-node]');
-  if (textContainer) {
-    let text = textContainer.innerText.trim();
-    if (!text) {
-      text = textContainer.textContent.trim();
-    }
-    return text;
-  }
-  
-  // Last resort: try the answerElement itself
-  let text = answerElement.innerText.trim();
-  if (!text) {
-    text = answerElement.textContent.trim();
-  }
-  return text;
-}
-
-// Fallback polling to capture the answer element if not caught by the observer
-function pollForAnswer(answerSelector, maxPollTime = 5000, pollInterval = 500) {
-  let elapsed = 0;
-  const intervalId = setInterval(() => {
-    const answerElements = document.querySelectorAll(answerSelector);
-    if (answerElements.length > 0) {
-      const latestAnswer = answerElements[answerElements.length - 1];
-      // Check if the answer is complete (no child with aria-busy="true")
-      if (!latestAnswer.querySelector('[aria-busy="true"]')) {
-        console.log("Polling found a complete answer element; processing now");
-        processAnswer(latestAnswer);
-        clearInterval(intervalId);
-        return;
-      }
-    }
-    elapsed += pollInterval;
-    if (elapsed >= maxPollTime) {
-      console.log("Polling timeout reached without finding a complete answer element");
-      clearInterval(intervalId);
-    }
-  }, pollInterval);
-}
-
-// Fallback polling to capture the answer element if not caught by the observer
-function pollForAnswer(answerSelector, maxPollTime = 5000, pollInterval = 500) {
-  let elapsed = 0;
-  const intervalId = setInterval(() => {
-    const answerElements = document.querySelectorAll(answerSelector);
-    if (answerElements.length > 0) {
-      const latestAnswer = answerElements[answerElements.length - 1];
-      // Check if the answer is complete (no child with aria-busy="true")
-      if (!latestAnswer.querySelector('[aria-busy="true"]')) {
-        console.log("Polling found a complete answer element; processing now");
-        processAnswer(latestAnswer);
-        clearInterval(intervalId);
-        return;
-      }
-    }
-    elapsed += pollInterval;
-    if (elapsed >= maxPollTime) {
-      console.log("Polling timeout reached without finding a complete answer element");
-      clearInterval(intervalId);
-    }
-  }, pollInterval);
-}
-
-// Wait until the answer element's text remains unchanged for a set number of polls
-function waitForStableText(answerElement, callback, stabilityDelay = 300, maxAttempts = 5) {
-  let lastText = answerElement.innerText.trim();
-  let stableCount = 0;
-  const intervalId = setInterval(() => {
-    const currentText = answerElement.innerText.trim();
-    if (currentText === lastText && currentText !== "") {
-      stableCount++;
-      if (stableCount >= maxAttempts) {
-        clearInterval(intervalId);
-        callback(currentText);
-      }
-    } else {
-      // Reset the counter if the text has changed
-      lastText = currentText;
-      stableCount = 0;
-    }
-  }, stabilityDelay);
-}
-
-
-// Updated setupAnswerObserver with fallback polling
+// Set up the main observer for answer elements
 function setupAnswerObserver(platform) {
   if (answerObserver) {
     answerObserver.disconnect();
@@ -385,37 +392,149 @@ function setupAnswerObserver(platform) {
   const answerSelector = platform === 'claude' ? CLAUDE_ANSWER_SELECTOR : CHATGPT_ANSWER_SELECTOR;
   const conversationContainer = document.querySelector('main') || document;
   
+  // Track the latest answer we've seen
+  let latestAnswerSeen = null;
+  let completionCheckInterval = null;
+  
+  // Function to start monitoring an answer element
+  function startMonitoringAnswer(answerElement) {
+    // Only start if we're not already monitoring this element
+    if (latestAnswerSeen === answerElement) return;
+    
+    console.log("Starting to monitor new answer element", answerElement);
+    latestAnswerSeen = answerElement;
+    
+    // Clear any existing interval
+    if (completionCheckInterval) {
+      clearInterval(completionCheckInterval);
+    }
+    
+    // For logging less frequently
+    let logCounter = 0;
+    
+    // Start checking for completion
+    completionCheckInterval = setInterval(() => {
+      if (!isWaitingForAnswer) {
+        clearInterval(completionCheckInterval);
+        return;
+      }
+      
+      // Check if answer is complete
+      if (isAnswerComplete(answerElement)) {
+        console.log("Answer appears complete! Processing now.");
+        clearInterval(completionCheckInterval);
+        
+        // Wait a short moment to ensure everything is rendered
+        setTimeout(() => {
+          if (isWaitingForAnswer) {
+            processAnswer(answerElement);
+          }
+        }, 1000);
+      } else {
+        // Only log every 5th time (or whatever number you prefer)
+        logCounter++;
+        if (logCounter % 5 === 0) {
+          console.log("Answer still being generated, waiting...");
+        }
+      }
+    }, 2000); // Check every 2 seconds
+  }
+  
+  // Observer for new answers
   answerObserver = new MutationObserver((mutations) => {
     if (!isWaitingForAnswer) return;
     
-    for (const mutation of mutations) {
-      if (mutation.type === 'childList' || mutation.type === 'subtree') {
-        const answerElements = document.querySelectorAll(answerSelector);
-        if (answerElements.length > 0) {
-          const latestAnswer = answerElements[answerElements.length - 1];
-          if (!latestAnswer.querySelector('[aria-busy="true"]') && isWaitingForAnswer) {
-            console.log("Observer found a complete answer; processing after delay");
-            setTimeout(() => processAnswer(latestAnswer), 500);
-            break;
-          }
-        }
-      }
+    // Look for answers in the mutations
+    const answerElements = document.querySelectorAll(answerSelector);
+    if (answerElements.length > 0) {
+      const latestAnswer = answerElements[answerElements.length - 1];
+      
+      // Start monitoring this answer for completion
+      startMonitoringAnswer(latestAnswer);
     }
   });
   
+  // Start observing for changes to the conversation
   answerObserver.observe(conversationContainer, {
     childList: true,
     subtree: true,
-    attributes: true,
-    attributeFilter: ['data-message-id', 'aria-busy']
+    attributes: true
   });
   
   console.log("Answer observer set up for platform:", platform);
+  
+  // Immediately check for existing answers
+  const existingAnswers = document.querySelectorAll(answerSelector);
+  if (existingAnswers.length > 0) {
+    const latestAnswer = existingAnswers[existingAnswers.length - 1];
+    startMonitoringAnswer(latestAnswer);
+  }
   
   // Start fallback polling in case observer misses the answer element
   pollForAnswer(answerSelector);
+  
+  // Also set up a long-running fallback check
+  setupLongRunningFallback(answerSelector);
 }
 
+// Fallback polling to capture the answer element if not caught by the observer
+function pollForAnswer(answerSelector, maxPollTime = 30000, pollInterval = 1000) {
+  let elapsed = 0;
+  const intervalId = setInterval(() => {
+    const answerElements = document.querySelectorAll(answerSelector);
+    if (answerElements.length > 0) {
+      const latestAnswer = answerElements[answerElements.length - 1];
+      // Check if the answer is complete
+      if (isAnswerComplete(latestAnswer)) {
+        console.log("Polling found a complete answer element; processing now");
+        processAnswer(latestAnswer);
+        clearInterval(intervalId);
+        return;
+      }
+    }
+    elapsed += pollInterval;
+    if (elapsed >= maxPollTime) {
+      console.log("Polling timeout reached without finding a complete answer element");
+      clearInterval(intervalId);
+    }
+  }, pollInterval);
+}
+
+// Extra fallback for very long running generations
+function setupLongRunningFallback(answerSelector) {
+  // Set up a repeated check that runs less frequently but for a longer time
+  const maxChecks = 20; // Up to 2 minutes of waiting
+  let checkCount = 0;
+  
+  const longRunningInterval = setInterval(() => {
+    checkCount++;
+    
+    // Stop checking if we're no longer waiting or we've reached max checks
+    if (!isWaitingForAnswer || checkCount > maxChecks) {
+      clearInterval(longRunningInterval);
+      return;
+    }
+    
+    console.log(`Long-running fallback check ${checkCount}/${maxChecks}`);
+    
+    // Find all answers and check the latest one
+    const answerElements = document.querySelectorAll(answerSelector);
+    if (answerElements.length > 0) {
+      const latestAnswer = answerElements[answerElements.length - 1];
+      
+      if (isAnswerComplete(latestAnswer)) {
+        console.log("Long-running fallback found complete answer");
+        setTimeout(() => {
+          if (isWaitingForAnswer) {
+            processAnswer(latestAnswer);
+          }
+        }, 500);
+        
+        clearInterval(longRunningInterval);
+      }
+    }
+  }, 6000); // Check every 6 seconds
+}
 
 // Extract model information
 function extractModelInfo(answerElement, platform) {
@@ -430,7 +549,7 @@ function extractModelInfo(answerElement, platform) {
         model = modelSlug; // Use the slug as model if available
       }
       
-      // Second attempt - look for the model in the o3-mini span
+      // Second attempt - look for the model in the span
       if (model === 'unknown') {
         const modelSpan = document.querySelector('.overflow-hidden.text-clip.whitespace-nowrap.text-sm');
         if (modelSpan && modelSpan.textContent) {
@@ -471,6 +590,7 @@ function extractModelInfo(answerElement, platform) {
   return { model, modelSlug };
 }
 
+// Diagnostic function for debugging elements
 function logElementDiagnostics(element, label) {
   console.log(`--- ${label} Diagnostics ---`);
   console.log("Element:", element);
@@ -588,7 +708,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         if (request.autoSubmit) {
           // Get current tab ID and call the background script to execute the click
           console.log("Auto-submit is enabled, will attempt to submit prompt");
-          // Get current tab ID and call the background script to execute the click
           setTimeout(() => {
             console.log("Sending clickSubmitButton message to background script");
             chrome.runtime.sendMessage({
@@ -621,6 +740,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
+// Keep connection to background script alive
+function establishPersistentConnection() {
+  const port = chrome.runtime.connect({name: "keepAlive"});
+  port.onDisconnect.addListener(() => {
+    console.log("Port disconnected, attempting to reconnect...");
+    setTimeout(establishPersistentConnection, 1000);
+  });
+}
+
+// Set up persistent connection
+establishPersistentConnection();
+
 // When content script loads, check if search should be enabled/disabled
 chrome.storage.sync.get(['searchEnabled'], function(result) {
   if (typeof result.searchEnabled !== 'undefined') {
@@ -634,8 +765,14 @@ chrome.storage.sync.get(['searchEnabled'], function(result) {
   }
 });
 
-// Setup page load handler to start monitoring the conversation
+// Set up an initial scan after the page loads
 window.addEventListener('load', () => {
+  // Give the page a moment to render all existing answers
+  setTimeout(() => {
+    console.log("Scanning for pre-rendered answers after page load...");
+    scanForExistingAnswers();
+  }, 2000);
+  
   console.log("Page loaded, setting up conversation monitoring");
   
   // Get current platform

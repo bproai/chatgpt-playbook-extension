@@ -339,3 +339,59 @@ async function testApiConnection() {
   });
 }
 
+// Extended keep-alive mechanism
+function setupExtendedKeepAlive() {
+  // Keep service worker alive for extended periods
+  const shortInterval = 15000; // 15 seconds
+  const longInterval = 45000;  // 45 seconds
+  
+  // Fast pings when we have pending data
+  const shortPing = setInterval(() => {
+    const hasPendingData = questionCache.length > 0 || answerCache.length > 0;
+    
+    if (hasPendingData) {
+      console.log("Short ping: Data pending, keeping worker alive");
+      
+      // If waiting too long with pending data, try upload again
+      if (questionCache.length > 0 || answerCache.length > 0) {
+        uploadCachedData();
+      }
+    }
+  }, shortInterval);
+  
+  // Slower heartbeat for general keep-alive
+  const longPing = setInterval(() => {
+    console.log("Long ping: Service worker heartbeat");
+    
+    // Check for any interrupted uploads
+    chrome.storage.local.get(['lastUploadAttempt'], function(result) {
+      const lastAttempt = result.lastUploadAttempt || 0;
+      const now = Date.now();
+      
+      // If it's been more than 2 minutes since last upload attempt and we have data
+      if ((now - lastAttempt) > 120000 && (questionCache.length > 0 || answerCache.length > 0)) {
+        console.log("Detected stalled upload, retrying...");
+        uploadCachedData();
+      }
+    });
+  }, longInterval);
+  
+  // Record upload attempts
+  const originalUploadFn = uploadCachedData;
+  uploadCachedData = function() {
+    chrome.storage.local.set({'lastUploadAttempt': Date.now()});
+    return originalUploadFn.apply(this, arguments);
+  };
+}
+
+// Call the extended keep-alive setup
+setupExtendedKeepAlive();
+
+// Set up connection listener to keep the service worker active
+chrome.runtime.onConnect.addListener(port => {
+  console.log("Port connected:", port.name);
+  
+  port.onDisconnect.addListener(() => {
+    console.log("Port disconnected");
+  });
+});
