@@ -1,8 +1,8 @@
-# PiEVerse Prompt Pro
+# PieVerse Prompt Pro
 
 A powerful Chrome extension that enhances your AI interactions with ChatGPT and Claude through curated professional prompts.
 
-![PiEVerse Logo](icons/icon128.png)
+![PieVerse Logo](icons/icon128.png)
 
 ## Features
 
@@ -21,12 +21,12 @@ A powerful Chrome extension that enhances your AI interactions with ChatGPT and 
 2. Open Chrome and navigate to `chrome://extensions/`
 3. Enable "Developer mode" in the top right
 4. Click "Load unpacked" and select the extension directory
-5. The PiEVerse icon should now appear in your Chrome toolbar
+5. The PieVerse icon should now appear in your Chrome toolbar
 
 ## Usage
 
 1. Visit ChatGPT or Claude.ai in your browser
-2. Click the PiEVerse icon in your toolbar or use the keyboard shortcut (Ctrl/Cmd + Shift + P)
+2. Click the PieVerse icon in your toolbar or use the keyboard shortcut (Ctrl/Cmd + Shift + P)
 3. Select a prompt from the available categories:
    - Writing & Analysis
    - Finance & Markets
