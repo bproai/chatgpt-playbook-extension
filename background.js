@@ -143,6 +143,9 @@ async function uploadCachedData() {
       metadata: a.metadata
     }));
     
+    // Filter out answers with null question_ids
+    const validAnswers = answers.filter(a => a.question_id !== null);
+
     console.log(`Uploading ${questions.length} questions and ${answers.length} answers to ${apiUrl}/api/qa`);
     
     // Send to API
