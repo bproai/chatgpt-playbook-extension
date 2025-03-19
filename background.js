@@ -7,6 +7,12 @@ let uploadInProgress = false;
 const UPLOAD_INTERVAL = 30000; // Upload every 30 seconds
 const MAX_CACHE_SIZE = 100;
 
+let wsConnection = null;
+let wsReconnectTimer = null;
+const WS_RECONNECT_INTERVAL = 5000; // Reconnect every 5 seconds if connection fails
+const WS_DEFAULT_PORT = 3031; // Default WebSocket port
+
+
 // Load cached data from storage on startup
 function initializeState() {
   chrome.storage.local.get(['questionCache', 'answerCache'], function(result) {
@@ -256,6 +262,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // Handle reconnecting WebSocket with new URL
+  if (request.action === "reconnectWebSocket") {
+    console.log("Reconnecting WebSocket with new URL:", request.wsUrl);
+    connectToWebSocket(request.wsUrl);
+    sendResponse({ success: true });
+    return true;
+  }
+
   console.log("Current caches:", {
     questions: questionCache.length,
     answers: answerCache.length
@@ -398,3 +412,126 @@ chrome.runtime.onConnect.addListener(port => {
     console.log("Port disconnected");
   });
 });
+
+
+// Add this function to initialize WebSocket connection
+function initWebSocketConnection() {
+  // Get WebSocket URL from storage, default to localhost:3031
+  chrome.storage.sync.get(['wsUrl'], function(result) {
+    const wsUrl = result.wsUrl || 'ws://localhost:3031';
+    connectToWebSocket(wsUrl);
+  });
+}
+
+// Add function to connect to WebSocket
+function connectToWebSocket(wsUrl) {
+  // Clear any existing connection
+  if (wsConnection) {
+    wsConnection.close();
+    wsConnection = null;
+  }
+  
+  // Clear any reconnect timer
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer);
+    wsReconnectTimer = null;
+  }
+  
+  try {
+    console.log(`Connecting to WebSocket at ${wsUrl}`);
+    wsConnection = new WebSocket(wsUrl);
+    
+    wsConnection.onopen = function() {
+      console.log('WebSocket connection established');
+      
+      // Send a hello message
+      sendWebSocketMessage({
+        type: 'hello',
+        clientType: 'chrome-extension',
+        version: '1.0.2'
+      });
+    };
+    
+    wsConnection.onmessage = function(event) {
+      console.log('WebSocket message received:', event.data);
+      
+      try {
+        const message = JSON.parse(event.data);
+        
+        // Handle insertPrompt message
+        if (message.type === 'insertPrompt') {
+          // Send to all tabs to find the one with ChatGPT or Claude open
+          chrome.tabs.query({}, function(tabs) {
+            tabs.forEach(tab => {
+              chrome.tabs.sendMessage(tab.id, {
+                action: 'insertPrompt',
+                prompt: message.prompt,
+                autoSubmit: message.autoSubmit !== false // Default to autoSubmit true if not specified
+              }).catch(error => {
+                // This is expected to fail for tabs that don't have our content script
+                // console.log("Failed to send message to tab", tab.id, error);
+              });
+            });
+          });
+        }
+      } catch (error) {
+        console.error('Error processing WebSocket message:', error);
+      }
+    };
+    
+    wsConnection.onclose = function(event) {
+      console.log('WebSocket connection closed:', event.code, event.reason);
+      scheduleReconnect(wsUrl);
+    };
+    
+    wsConnection.onerror = function(error) {
+      console.error('WebSocket error:', error);
+      // The onclose handler will be called after this
+    };
+  } catch (error) {
+    console.error('Error setting up WebSocket:', error);
+    scheduleReconnect(wsUrl);
+  }
+}
+
+// Function to schedule WebSocket reconnection
+function scheduleReconnect(wsUrl) {
+  if (wsReconnectTimer) {
+    clearTimeout(wsReconnectTimer);
+  }
+  
+  wsReconnectTimer = setTimeout(() => {
+    console.log('Attempting to reconnect WebSocket...');
+    connectToWebSocket(wsUrl);
+  }, WS_RECONNECT_INTERVAL);
+}
+
+// Function to send message to WebSocket
+function sendWebSocketMessage(message) {
+  if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+    const messageString = typeof message === 'string' ? message : JSON.stringify(message);
+    wsConnection.send(messageString);
+    return true;
+  }
+  
+  console.log('WebSocket not connected, cannot send message');
+  return false;
+}
+
+// Initialize the extension - add WebSocket initialization
+function initializeState() {
+  chrome.storage.local.get(['questionCache', 'answerCache'], function(result) {
+    if (result.questionCache) {
+      questionCache = result.questionCache;
+      console.log(`Loaded ${questionCache.length} cached questions`);
+    }
+    
+    if (result.answerCache) {
+      answerCache = result.answerCache;
+      console.log(`Loaded ${answerCache.length} cached answers`);
+    }
+  });
+  
+  // Initialize WebSocket connection
+  initWebSocketConnection();
+}
