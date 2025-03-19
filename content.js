@@ -307,6 +307,15 @@ function processAnswer(latestAnswer) {
         if (isValidAnswer(updatedRichAnswer, updatedModelInfo, latestAnswer)) {
           console.log("Answer is now valid, processing");
           storeValidAnswer(latestAnswer, updatedRichAnswer, updatedModelInfo);
+          
+          // Call the background script to handle the copy button click
+          console.log("Sending clickCopyButton message to background script");
+          chrome.runtime.sendMessage({
+            action: "clickCopyButton",
+            platform: getCurrentPlatform()
+          }, response => {
+            console.log("Background script response to clickCopyButton:", response);
+          });
         } else {
           console.log("Answer still invalid after retry");
         }
@@ -318,6 +327,25 @@ function processAnswer(latestAnswer) {
   
   // Answer is valid, store it
   storeValidAnswer(latestAnswer, richAnswer, modelInfo);
+  
+  // Call the background script to handle the copy button click
+  console.log("Sending clickCopyButton message to background script");
+  chrome.runtime.sendMessage({
+    action: "clickCopyButton",
+    platform: getCurrentPlatform()
+  }, response => {
+    console.log("Background script response to clickCopyButton:", response);
+    
+    if (response && response.success) {
+      if (response.contentExtracted) {
+        console.log("Content successfully extracted and sent via WebSocket, length:", response.contentLength);
+      } else {
+        console.log("Copy button clicked but content not directly extracted");
+      }
+    } else {
+      console.error("Failed to click copy button:", response ? response.error : "Unknown error");
+    }
+  });
 }
 
 // Store a validated answer

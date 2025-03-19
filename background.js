@@ -292,6 +292,97 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     return true; // Keep the message channel open for async response
   }
+
+  // Handle sending WebSocket messages
+  if (request.action === "sendWebSocketMessage") {
+    console.log("[DEBUG] Background script received WebSocket message request:", {
+      type: request.data.type,
+      messageId: request.data.messageId,
+      contentLength: request.data.content ? request.data.content.length : 0,
+      timestamp: request.data.timestamp
+    });
+    
+    // Check WebSocket status before attempting to send
+    if (!wsConnection) {
+      console.error("[DEBUG] WebSocket connection is null");
+      sendResponse({ success: false, error: "WebSocket connection is null" });
+      return true;
+    }
+    
+    console.log("[DEBUG] WebSocket readyState:", wsConnection.readyState);
+    console.log("[DEBUG] WebSocket connection URL:", wsConnection.url);
+    
+    if (wsConnection.readyState === WebSocket.OPEN) {
+      try {
+        const messageString = JSON.stringify(request.data);
+        console.log("[DEBUG] Sending to WebSocket, message length:", messageString.length);
+        wsConnection.send(messageString);
+        console.log("[DEBUG] Message sent successfully to WebSocket");
+        sendResponse({ success: true });
+      } catch (error) {
+        console.error("[DEBUG] Error sending message to WebSocket:", error);
+        sendResponse({ success: false, error: error.message });
+      }
+    } else {
+      console.error("[DEBUG] WebSocket not connected, readyState:", wsConnection.readyState);
+      sendResponse({ success: false, error: "WebSocket not connected" });
+    }
+    return true;
+  }
+
+  if (request.action === "clickCopyButton") {
+    // Get the tab ID from the sender
+    const tabId = sender.tab.id;
+    
+    console.log("Received clickCopyButton request");
+    
+    // Execute a script in the tab to click the copy button
+    chrome.scripting.executeScript({
+      target: { tabId: tabId },
+      function: clickCopyButton
+    })
+    .then(results => {
+      console.log("Copy button click script executed:", results);
+      
+      if (results && results[0] && results[0].result && results[0].result.success) {
+        // If copy was successful and we got the content directly
+        const extractedContent = results[0].result.content;
+        const messageId = results[0].result.messageId;
+        
+        // Send the content via WebSocket
+        if (extractedContent) {
+          sendWebSocketMessage({
+            type: 'aiContent',
+            content: extractedContent,
+            messageId: messageId,
+            timestamp: new Date().toISOString(),
+            platform: request.platform || 'unknown'
+          });
+          
+          sendResponse({ 
+            success: true, 
+            contentExtracted: true,
+            contentLength: extractedContent.length
+          });
+        } else {
+          sendResponse({ success: true, contentExtracted: false });
+        }
+      } else {
+        sendResponse({ 
+          success: false, 
+          error: results && results[0] && results[0].result ? results[0].result.error : "Unknown error" 
+        });
+      }
+    })
+    .catch(error => {
+      console.error("Error executing copy button click script:", error);
+      sendResponse({ success: false, error: error.message });
+    });
+    
+    // Keep the message channel open for async response
+    return true;
+  }
+
 });
 
 // Function that will be injected into the page to click the submit button
@@ -324,6 +415,53 @@ function clickSubmitButton(platform) {
   }
   
   return false;
+}
+
+// Function that will be injected into the page to click the copy button
+function clickCopyButton() {
+  console.log(`Attempting to click copy button`);
+  
+  // Find all copy buttons on the page
+  const copyButtons = document.querySelectorAll('button[aria-label="Copy"]');
+  
+  if (copyButtons.length === 0) {
+    console.log("No copy buttons found");
+    return {success: false, error: "No copy buttons found"};
+  }
+  
+  // Get the last/most recent copy button (likely for the latest response)
+  const lastCopyButton = copyButtons[copyButtons.length - 1];
+  
+  if (lastCopyButton && !lastCopyButton.disabled) {
+    console.log("Found and clicking copy button");
+    
+    // First, get the text content from the message element
+    const messageElement = lastCopyButton.closest('article');
+    let messageContent = "";
+    
+    if (messageElement) {
+      // Try to find the actual content within the article
+      const contentElement = messageElement.querySelector('.markdown');
+      if (contentElement) {
+        messageContent = contentElement.innerText || contentElement.textContent;
+      } else {
+        messageContent = messageElement.innerText || messageElement.textContent;
+      }
+      console.log("Extracted content length:", messageContent.length);
+    }
+    
+    // Click the copy button
+    lastCopyButton.click();
+    
+    return {
+      success: true, 
+      content: messageContent,
+      messageId: messageElement ? messageElement.getAttribute('data-message-id') : null
+    };
+  } else {
+    console.log("Copy button not found or is disabled");
+    return {success: false, error: "Copy button not found or disabled"};
+  }
 }
 
 // Test API connection
