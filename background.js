@@ -433,7 +433,7 @@ function clickCopyButton() {
   const lastCopyButton = copyButtons[copyButtons.length - 1];
   
   if (lastCopyButton && !lastCopyButton.disabled) {
-    console.log("Found and clicking copy button");
+    console.log("Found copy button, ensuring it has focus before clicking");
     
     // First, get the text content from the message element
     const messageElement = lastCopyButton.closest('article');
@@ -443,21 +443,49 @@ function clickCopyButton() {
       // Try to find the actual content within the article
       const contentElement = messageElement.querySelector('.markdown');
       if (contentElement) {
-        messageContent = contentElement.innerText || contentElement.textContent;
+        messageContent = contentElement.outerHTML || contentElement.innerText;
       } else {
         messageContent = messageElement.innerText || messageElement.textContent;
       }
       console.log("Extracted content length:", messageContent.length);
     }
     
-    // Click the copy button
-    lastCopyButton.click();
-    
-    return {
-      success: true, 
-      content: messageContent,
-      messageId: messageElement ? messageElement.getAttribute('data-message-id') : null
-    };
+    try {
+      // Make sure the button is visible in the viewport
+      lastCopyButton.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      
+      // Focus the button first
+      lastCopyButton.focus();
+      
+      // Try to click the button but catch any errors
+      try {
+        lastCopyButton.click();
+      } catch (clickError) {
+        console.warn("Copy button click failed, but continuing:", clickError);
+        // Just log the error but don't let it stop execution
+      }
+      
+      // Return success with the content we extracted directly,
+      // even if the clipboard operation might have failed
+      return {
+        success: true, 
+        content: messageContent,
+        messageId: messageElement ? messageElement.getAttribute('data-message-id') : null,
+        clipboardError: false
+      };
+    } catch (error) {
+      console.error("Error during copy button operation:", error);
+      // Even if there was an error, still return the content if we have it
+      if (messageContent) {
+        return {
+          success: true,
+          content: messageContent,
+          messageId: messageElement ? messageElement.getAttribute('data-message-id') : null,
+          clipboardError: true
+        };
+      }
+      return {success: false, error: error.message};
+    }
   } else {
     console.log("Copy button not found or is disabled");
     return {success: false, error: "Copy button not found or disabled"};
