@@ -56,6 +56,15 @@ function storeQuestionData(data) {
   
   // Schedule upload
   scheduleUpload();
+
+  // Also send the question via WebSocket for real-time notification
+  sendWebSocketMessage({
+    type: 'userQuestion',
+    content: data.question,
+    messageId: data.id,
+    timestamp: data.timestamp,
+    platform: data.platform
+  });
 }
 
 // Store answer data in cache
@@ -265,6 +274,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   // Handle storing answer data
   if (request.action === "storeAnswerData") {
     storeAnswerData(request.data);
+
+    // NEW CODE: Also send the answer via WebSocket
+    try {
+      const answerContent = JSON.parse(request.data.answer);
+      sendWebSocketMessage({
+        type: 'aiAnswer',
+        content: answerContent,
+        messageId: request.data.id,
+        questionId: request.data.question_id,
+        timestamp: request.data.timestamp,
+        platform: request.data.platform,
+        model: request.data.model
+      });
+    } catch (error) {
+      console.error("Error sending answer via WebSocket:", error);
+    }
     
     // Add debug logging here
     console.log("After storing answer, current caches:", {
