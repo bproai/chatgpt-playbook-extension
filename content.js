@@ -865,3 +865,39 @@ window.addEventListener('unload', () => {
     answerObserver.disconnect();
   }
 });
+
+// Add this to the content.js, near the beginning after detecting the platform
+// Register this tab with the background script
+function registerWithBackground() {
+  const platform = getCurrentPlatform();
+  if (!platform) return;
+  
+  chrome.runtime.sendMessage({
+    action: "registerTab",
+    platform: platform
+  }, response => {
+    if (response && response.success) {
+      console.log(`Tab registered with background script, tabId: ${response.tabId}`);
+    } else {
+      console.error("Failed to register tab with background script");
+    }
+  });
+}
+
+// Call this function when the content script initializes
+registerWithBackground();
+
+// Add tab unregistration on page unload
+window.addEventListener('unload', () => {
+  chrome.runtime.sendMessage({
+    action: "unregisterTab"
+  });
+  
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+  }
+  
+  if (answerObserver) {
+    answerObserver.disconnect();
+  }
+});

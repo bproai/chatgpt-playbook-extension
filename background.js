@@ -11,6 +11,9 @@ let wsConnection = null;
 let wsReconnectTimer = null;
 const WS_RECONNECT_INTERVAL = 5000; // Reconnect every 5 seconds if connection fails
 const WS_DEFAULT_PORT = 3031; // Default WebSocket port
+let pendingTabRegistrations = [];
+
+let registeredTabs = {};
 
 
 // Load cached data from storage on startup
@@ -197,6 +200,11 @@ setInterval(uploadCachedData, UPLOAD_INTERVAL);
 
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  // Update last active timestamp for the tab
+  if (sender && sender.tab && sender.tab.id && registeredTabs[sender.tab.id]) {
+    registeredTabs[sender.tab.id].lastActive = Date.now();
+  }
+    
   if (request.action === "clickSubmitButton") {
     // Get the tab ID from the sender
     const tabId = sender.tab.id;
@@ -382,6 +390,56 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Keep the message channel open for async response
     return true;
   }
+
+  if (request.action === "registerTab") {
+    const tabId = sender.tab.id;
+    const tabInfo = {
+      url: sender.tab.url || "unknown",
+      platform: request.platform,
+      lastActive: Date.now()
+    };
+    
+    console.log(`Tab ${tabId} registered with platform: ${request.platform}`);
+    registeredTabs[tabId] = tabInfo;
+    
+    // If WebSocket is connected, send tab registration
+    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+      console.log(`Sending tab registration for ${tabId} to WebSocket`);
+      sendWebSocketMessage({
+        type: 'register_tab',
+        tabId: tabId.toString(),
+        platform: request.platform,
+        url: sender.tab.url || "unknown"
+      });
+    } else {
+      console.log(`WebSocket not connected or not ready, can't register tab ${tabId}`);
+      console.log(`WebSocket status: ${wsConnection ? wsConnection.readyState : "null"}`);
+      // Store for later registration when WebSocket connects
+      if (!pendingTabRegistrations) {
+        pendingTabRegistrations = [];
+      }
+      pendingTabRegistrations.push({
+        tabId: tabId.toString(),
+        platform: request.platform,
+        url: sender.tab.url || "unknown"
+      });
+    }
+    
+    // Send confirmation back to the content script
+    sendResponse({ success: true, tabId: tabId });
+    return true;
+  }
+
+  // Handle tab unregistration (optional but good practice)
+  if (request.action === "unregisterTab") {
+    const tabId = sender.tab.id;
+    if (registeredTabs[tabId]) {
+      delete registeredTabs[tabId];
+      console.log(`Tab ${tabId} unregistered`);
+    }
+    sendResponse({ success: true });
+    return true;
+  }  
 
 });
 
@@ -648,14 +706,41 @@ function connectToWebSocket(wsUrl) {
     console.log(`Connecting to WebSocket at ${wsUrl}`);
     wsConnection = new WebSocket(wsUrl);
     
+    // Add to your background.js after establishing the WebSocket connection
     wsConnection.onopen = function() {
       console.log('WebSocket connection established');
       
-      // Send a hello message
+      // Send a hello message for the background script
       sendWebSocketMessage({
         type: 'hello',
         clientType: 'chrome-extension',
-        version: '1.0.2'
+        version: '1.0.2',
+        platform: 'chrome-extension'
+      });
+      
+      // Register any pending tabs
+      if (pendingTabRegistrations && pendingTabRegistrations.length > 0) {
+        console.log(`Registering ${pendingTabRegistrations.length} pending tabs`);
+        pendingTabRegistrations.forEach(tab => {
+          sendWebSocketMessage({
+            type: 'register_tab',
+            tabId: tab.tabId,
+            platform: tab.platform,
+            url: tab.url
+          });
+        });
+        pendingTabRegistrations = [];
+      }
+      
+      // Then send individual platform registrations for each tab
+      console.log(`Registering ${Object.keys(registeredTabs).length} existing tabs`);
+      Object.entries(registeredTabs).forEach(([tabId, tabInfo]) => {
+        sendWebSocketMessage({
+          type: 'register_tab',
+          tabId: tabId.toString(),
+          platform: tabInfo.platform || "unknown",
+          url: tabInfo.url || "unknown"
+        });
       });
     };
     
@@ -665,21 +750,17 @@ function connectToWebSocket(wsUrl) {
       try {
         const message = JSON.parse(event.data);
         
+        // Extract routing information
+        const targetType = message.targetType || 'broadcast'; // 'broadcast', 'platform', 'client'
+        const targetId = message.targetId; // tabId or platform name
+        
         // Handle insertPrompt message
         if (message.type === 'insertPrompt') {
-          // Send to all tabs to find the one with ChatGPT or Claude open
-          chrome.tabs.query({}, function(tabs) {
-            tabs.forEach(tab => {
-              chrome.tabs.sendMessage(tab.id, {
-                action: 'insertPrompt',
-                prompt: message.prompt,
-                autoSubmit: message.autoSubmit !== false // Default to autoSubmit true if not specified
-              }).catch(error => {
-                // This is expected to fail for tabs that don't have our content script
-                // console.log("Failed to send message to tab", tab.id, error);
-              });
-            });
-          });
+          routeMessageToContent(message, targetType, targetId);
+        } 
+        // Add other message types as needed
+        else {
+          console.log(`Unknown message type: ${message.type}`);
         }
       } catch (error) {
         console.error('Error processing WebSocket message:', error);
@@ -741,4 +822,88 @@ function initializeState() {
   
   // Initialize WebSocket connection
   initWebSocketConnection();
+}
+
+// Add this new function for routing messages
+function routeMessageToContent(message, targetType, targetId) {
+  // Determine which tabs should receive the message
+  let targetTabs = [];
+  
+  // Add debug logging for incoming values
+  console.log(`Routing message with targetType: ${targetType}, targetId: ${targetId}`);
+  
+  if (targetType === 'broadcast') {
+    // Send to all tabs
+    targetTabs = Object.keys(registeredTabs);
+    console.log(`Broadcasting to ${targetTabs.length} tabs`);
+  } 
+  else if (targetType === 'platform') {
+    // Send to all tabs of a specific platform (chatgpt, claude, etc)
+    targetTabs = Object.entries(registeredTabs)
+      .filter(([_, info]) => info.platform === targetId)
+      .map(([tabId, _]) => tabId);
+    console.log(`Targeting platform ${targetId}, found ${targetTabs.length} matching tabs`);
+  } 
+  else if (targetType === 'client') {
+    // Check if targetId has "tab_" prefix (from server) or if it's just the numeric ID
+    if (targetId && targetId.toString().startsWith('tab_')) {
+      // This is a tab ID from the server, extract just the number part
+      const numericId = targetId.toString().replace('tab_', '');
+      console.log(`Tab targeting: ID from server format, converted ${targetId} to ${numericId}`);
+      
+      if (registeredTabs[numericId]) {
+        targetTabs = [numericId];
+        console.log(`Found tab ${numericId}, will target specifically`);
+      }
+    } 
+    // Otherwise check if it's a raw tab ID
+    else if (registeredTabs[targetId]) {
+      targetTabs = [targetId];
+      console.log(`Found tab ${targetId}, will target specifically`);
+    }
+    else {
+      console.log(`Tab ${targetId} not found in registered tabs. Known tabs:`, Object.keys(registeredTabs));
+    }
+  }
+  
+  console.log(`Routing message to ${targetTabs.length} tabs`);
+  
+  // Important: Fixed logic condition - Only fall back if not specifically targeting a tab
+  if (targetTabs.length === 0 && targetType !== 'client') {
+    console.log('No registered tabs match criteria, falling back to all tabs');
+    chrome.tabs.query({}, function(tabs) {
+      tabs.forEach(tab => {
+        chrome.tabs.sendMessage(tab.id, {
+          action: 'insertPrompt',
+          prompt: message.prompt,
+          autoSubmit: message.autoSubmit !== false,
+          messageId: message.messageId || null
+        }).catch(error => {
+          // This is expected to fail for tabs that don't have our content script
+          // console.log("Failed to send message to tab", tab.id, error);
+        });
+      });
+    });
+    return;
+  }
+  
+  // If we're targeting a specific tab but didn't find it, log this
+  if (targetTabs.length === 0 && targetType === 'client') {
+    console.log(`Error: Could not find targeted tab ${targetId}. Not sending message.`);
+    return;
+  }
+  
+  // Send the message to each target tab
+  targetTabs.forEach(tabId => {
+    chrome.tabs.sendMessage(parseInt(tabId), {
+      action: 'insertPrompt',
+      prompt: message.prompt,
+      autoSubmit: message.autoSubmit !== false,
+      messageId: message.messageId || null
+    }).catch(error => {
+      console.log(`Failed to send message to tab ${tabId}:`, error);
+      // Tab might be closed or not responding, clean up
+      delete registeredTabs[tabId];
+    });
+  });
 }
