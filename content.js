@@ -41,8 +41,14 @@ function toggleSearchButton(enabled) {
   
   const platform = getCurrentPlatform();
   if (!platform) return;
+
+  // Skip search button toggling for Claude as it doesn't have the same search functionality
+  if (platform === 'claude') {
+    console.log("Search button toggling not applicable for Claude platform");
+    return;
+  }
   
-  // Find search button
+  // Find search button - only for ChatGPT
   let searchButton = document.querySelector('button[aria-label="Search"]');
   
   if (!searchButton) {
