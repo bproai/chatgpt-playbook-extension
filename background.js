@@ -152,10 +152,19 @@ async function uploadCachedData() {
       metadata: a.metadata
     }));
     
-    // Filter out answers with null question_ids
-    const validAnswers = answers.filter(a => a.question_id !== null);
+    // CHANGE 3: Filter out potentially problematic data
+    // Filter out questions with empty or null required fields
+    const validQuestions = questions.filter(q => 
+      q.id && q.platform && q.question && q.timestamp
+    );
+    
+    // Filter out answers with empty or null required fields
+    const validAnswers = answers.filter(a => 
+      a.id && a.question_id && a.platform && a.answer && a.timestamp
+    );
 
-    console.log(`Uploading ${questions.length} questions and ${answers.length} answers to ${apiUrl}/api/qa`);
+    console.log(`Uploading ${validQuestions.length} questions and ${validAnswers.length} answers to ${apiUrl}/api/qa`);
+    console.log(`Filtered out ${questions.length - validQuestions.length} invalid questions and ${answers.length - validAnswers.length} invalid answers`);
     
     // Send to API
     const response = await fetch(`${apiUrl}/api/qa`, {
@@ -163,10 +172,13 @@ async function uploadCachedData() {
       headers: {
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ questions, answers })
+      body: JSON.stringify({ questions: validQuestions, answers: validAnswers })
     });
     
+    // CHANGE 2: Add more detailed error handling
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`API error response: ${errorText}`);
       throw new Error(`API returned status: ${response.status}`);
     }
     
@@ -475,10 +487,6 @@ function clickSubmitButton(platform) {
   return false;
 }
 
-// Function that will be injected into the page to click the copy button
-// Function that will be injected into the page to click the copy button
-// Function that will be injected into the page to click the copy button
-// Function that will be injected into the page to click the copy button
 // Function that will be injected into the page to click the copy button
 function clickCopyButton() {
   console.log(`Attempting to click copy button`);
