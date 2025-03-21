@@ -806,6 +806,11 @@ function connectToWebSocket(wsUrl) {
         if (message.type === 'insertPrompt') {
           routeMessageToContent(message, targetType, targetId);
         } 
+        // Add new handler for creating a new chat
+        else if (message.type === 'newChat') {
+          // Handle new chat request
+          handleNewChatRequest(message, targetType, targetId);
+        }        
         // Add other message types as needed
         else {
           console.log(`Unknown message type: ${message.type}`);
@@ -954,4 +959,70 @@ function routeMessageToContent(message, targetType, targetId) {
       delete registeredTabs[tabId];
     });
   });
+}
+
+// Add this new function to handle the new chat request
+function handleNewChatRequest(message, targetType, targetId) {
+  console.log('Handling new chat request:', message);
+  
+  // Determine which tabs should receive the new chat command
+  let targetTabs = [];
+  
+  if (targetType === 'broadcast') {
+    // Only target ChatGPT tabs for broadcast
+    targetTabs = Object.entries(registeredTabs)
+      .filter(([_, info]) => info.platform === 'chatgpt')
+      .map(([tabId, _]) => tabId);
+    console.log(`Broadcasting new chat to ${targetTabs.length} ChatGPT tabs`);
+  } 
+  else if (targetType === 'platform' && targetId === 'chatgpt') {
+    // Send to all ChatGPT tabs
+    targetTabs = Object.entries(registeredTabs)
+      .filter(([_, info]) => info.platform === 'chatgpt')
+      .map(([tabId, _]) => tabId);
+    console.log(`Targeting all ChatGPT tabs, found ${targetTabs.length} matching tabs`);
+  } 
+  else if (targetType === 'client') {
+    // Check if targetId has "tab_" prefix or if it's just the numeric ID
+    const numericId = targetId.toString().replace('tab_', '');
+    
+    // Only proceed if it's a ChatGPT tab
+    if (registeredTabs[numericId] && registeredTabs[numericId].platform === 'chatgpt') {
+      targetTabs = [numericId];
+      console.log(`Found ChatGPT tab ${numericId}, will target specifically`);
+    } else {
+      console.log(`Tab ${numericId} is not a ChatGPT tab or not found`);
+    }
+  }
+  
+  // Execute script in each target tab to click the new chat button
+  targetTabs.forEach(tabId => {
+    chrome.scripting.executeScript({
+      target: { tabId: parseInt(tabId) },
+      function: clickNewChatButton
+    })
+    .then(results => {
+      console.log("New chat button click executed in tab", tabId, ":", results);
+    })
+    .catch(error => {
+      console.error("Error executing new chat button click script in tab", tabId, ":", error);
+    });
+  });
+}
+
+// Function that will be injected into the page to click the new chat button
+function clickNewChatButton() {
+  console.log("Attempting to click the New chat button on ChatGPT");
+  
+  // Find the button by its data-testid attribute
+  const newChatButton = document.querySelector('button[data-testid="create-new-chat-button"]');
+  
+  if (newChatButton) {
+    console.log("Found and clicking ChatGPT New chat button");
+    newChatButton.click();
+    return { success: true };
+  } else {
+    console.log("ChatGPT New chat button not found");
+    return { success: false, error: "Button not found" };
+  }
 }
