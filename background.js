@@ -975,19 +975,20 @@ function handleNewChatRequest(message, targetType, targetId) {
       .map(([tabId, _]) => tabId);
     console.log(`Broadcasting new chat to ${targetTabs.length} ChatGPT tabs`);
   } 
-  else if (targetType === 'platform' && targetId === 'chatgpt') {
-    // Send to all ChatGPT tabs
+  else if (targetType === 'platform') {
+    // Target all tabs of the specified platform (either ChatGPT or Claude)
+    const platform = targetId;
     targetTabs = Object.entries(registeredTabs)
-      .filter(([_, info]) => info.platform === 'chatgpt')
+      .filter(([_, info]) => info.platform === platform)
       .map(([tabId, _]) => tabId);
-    console.log(`Targeting all ChatGPT tabs, found ${targetTabs.length} matching tabs`);
+    console.log(`Targeting all ${platform} tabs, found ${targetTabs.length} matching tabs`);
   } 
   else if (targetType === 'client') {
     // Check if targetId has "tab_" prefix or if it's just the numeric ID
     const numericId = targetId.toString().replace('tab_', '');
     
-    // Only proceed if it's a ChatGPT tab
-    if (registeredTabs[numericId] && registeredTabs[numericId].platform === 'chatgpt') {
+    // Accept any tab regardless of platform
+    if (registeredTabs[numericId]) {
       targetTabs = [numericId];
       console.log(`Found ChatGPT tab ${numericId}, will target specifically`);
     } else {
@@ -995,14 +996,19 @@ function handleNewChatRequest(message, targetType, targetId) {
     }
   }
   
-  // Execute script in each target tab to click the new chat button
+  // Execute script in each target tab based on its platform
   targetTabs.forEach(tabId => {
+    const platform = registeredTabs[tabId]?.platform;
+    
+    // Choose the appropriate function based on the platform
+    const scriptFunction = platform === 'claude' ? clickClaudeNewChat : clickNewChatButton;
+    
     chrome.scripting.executeScript({
       target: { tabId: parseInt(tabId) },
-      function: clickNewChatButton
+      function: scriptFunction
     })
     .then(results => {
-      console.log("New chat button click executed in tab", tabId, ":", results);
+      console.log(`New chat button click executed in ${platform} tab`, tabId, ":", results);
       
       // Send result back via WebSocket
       if (results && results[0] && results[0].result) {
@@ -1012,26 +1018,30 @@ function handleNewChatRequest(message, targetType, targetId) {
         sendWebSocketMessage({
           type: 'newChatResult',
           tabId: tabId,
+          platform: platform,
           success: result.success,
-          message: result.message || result.error || 'Unknown result'
+          message: result.message || result.error || 'Unknown result',
+          ...result // Include all other details from the result
         });
       } else {
         // Handle case when no proper result returned
         sendWebSocketMessage({
           type: 'newChatResult',
           tabId: tabId,
+          platform: platform,
           success: false,
           message: 'No result returned from script execution'
         });
       }
     })
     .catch(error => {
-      console.error("Error executing new chat button click script in tab", tabId, ":", error);
+      console.error(`Error executing new chat script in ${platform} tab`, tabId, ":", error);
       
       // Send error via WebSocket
       sendWebSocketMessage({
         type: 'newChatResult',
         tabId: tabId,
+        platform: platform,
         success: false, 
         message: `Error: ${error.message}`
       });
@@ -1043,7 +1053,7 @@ function handleNewChatRequest(message, targetType, targetId) {
     sendWebSocketMessage({
       type: 'newChatResult',
       success: false,
-      message: 'No matching ChatGPT tabs found'
+      message: 'No matching AI assistant tabs found'
     });
   }
 }
@@ -1117,5 +1127,102 @@ function clickNewChatButton() {
       success: false, 
       error: "Button not found"
     };
+  }
+}
+
+// Function to trigger Claude's "New Chat" functionality with message count verification
+function clickClaudeNewChat() {
+  console.log("Attempting to trigger New Chat in Claude");
+  
+  // Count initial Claude messages
+  const initialMessageCount = document.querySelectorAll('div.font-claude-message').length;
+  console.log(`Initial Claude message count: ${initialMessageCount}`);
+  
+  // Direct approach: Find the New Chat link in the upper left corner and click it
+  const newChatLink = document.querySelector('a[href="/new"]');
+  
+  if (newChatLink) {
+    console.log("Found New Chat link, clicking it");
+    newChatLink.click();
+    
+    // Check after a delay if it worked
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        // Count current Claude messages
+        const currentMessageCount = document.querySelectorAll('div.font-claude-message').length;
+        console.log(`Current Claude message count: ${currentMessageCount}`);
+        
+        if (currentMessageCount === 0 || currentMessageCount < initialMessageCount) {
+          resolve({
+            success: true,
+            message: "New chat created successfully in Claude",
+            method: "direct-link-click",
+            initialMessageCount,
+            finalMessageCount: currentMessageCount
+          });
+        } else {
+          // If the direct click didn't work, try URL navigation as fallback
+          console.log("Direct link click didn't work, trying URL navigation");
+          
+          // Store current URL to check if it changes
+          const currentUrl = window.location.href;
+          
+          // Navigate to /new directly
+          window.location.href = 'https://claude.ai/new';
+          
+          setTimeout(() => {
+            const finalMessageCount = document.querySelectorAll('div.font-claude-message').length;
+            
+            if (window.location.href !== currentUrl || finalMessageCount === 0 || finalMessageCount < initialMessageCount) {
+              resolve({
+                success: true,
+                message: "Created new chat by navigating to new chat URL",
+                method: "url-navigation",
+                initialMessageCount,
+                finalMessageCount
+              });
+            } else {
+              resolve({
+                success: false,
+                message: "Failed to create new chat in Claude",
+                method: "all-failed",
+                initialMessageCount,
+                finalMessageCount
+              });
+            }
+          }, 1500);
+        }
+      }, 1000);
+    });
+  } else {
+    console.log("New Chat link not found, trying URL navigation");
+    
+    // Fallback to URL navigation
+    const currentUrl = window.location.href;
+    window.location.href = 'https://claude.ai/new';
+    
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const finalMessageCount = document.querySelectorAll('div.font-claude-message').length;
+        
+        if (window.location.href !== currentUrl || finalMessageCount === 0 || finalMessageCount < initialMessageCount) {
+          resolve({
+            success: true,
+            message: "Created new chat by navigating to new chat URL",
+            method: "url-navigation-direct",
+            initialMessageCount,
+            finalMessageCount
+          });
+        } else {
+          resolve({
+            success: false,
+            message: "Failed to create new chat in Claude - couldn't find new chat link",
+            method: "navigation-failed",
+            initialMessageCount,
+            finalMessageCount
+          });
+        }
+      }, 1500);
+    });
   }
 }
