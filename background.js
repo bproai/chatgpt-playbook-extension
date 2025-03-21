@@ -1003,11 +1003,49 @@ function handleNewChatRequest(message, targetType, targetId) {
     })
     .then(results => {
       console.log("New chat button click executed in tab", tabId, ":", results);
+      
+      // Send result back via WebSocket
+      if (results && results[0] && results[0].result) {
+        const result = results[0].result;
+        
+        // Create the response message
+        sendWebSocketMessage({
+          type: 'newChatResult',
+          tabId: tabId,
+          success: result.success,
+          message: result.message || result.error || 'Unknown result'
+        });
+      } else {
+        // Handle case when no proper result returned
+        sendWebSocketMessage({
+          type: 'newChatResult',
+          tabId: tabId,
+          success: false,
+          message: 'No result returned from script execution'
+        });
+      }
     })
     .catch(error => {
       console.error("Error executing new chat button click script in tab", tabId, ":", error);
+      
+      // Send error via WebSocket
+      sendWebSocketMessage({
+        type: 'newChatResult',
+        tabId: tabId,
+        success: false, 
+        message: `Error: ${error.message}`
+      });
     });
   });
+  
+  // If no tabs were targeted, report failure
+  if (targetTabs.length === 0) {
+    sendWebSocketMessage({
+      type: 'newChatResult',
+      success: false,
+      message: 'No matching ChatGPT tabs found'
+    });
+  }
 }
 
 // Function that will be injected into the page to click the new chat button
@@ -1019,10 +1057,65 @@ function clickNewChatButton() {
   
   if (newChatButton) {
     console.log("Found and clicking ChatGPT New chat button");
+    
+    // Store initial article count before clicking
+    const initialArticleCount = document.querySelectorAll('article').length;
+    console.log(`Initial article count: ${initialArticleCount}`);
+    
+    // Click the button
     newChatButton.click();
-    return { success: true };
+    
+    // Set up a verification check with retry
+    return new Promise((resolve) => {
+      // First check after a short delay
+      setTimeout(() => {
+        const currentArticleCount = document.querySelectorAll('article').length;
+        console.log(`First check article count: ${currentArticleCount}`);
+        
+        // If no articles found, the new chat was successful
+        if (currentArticleCount === 0) {
+          resolve({ 
+            success: true, 
+            message: "New chat created successfully"
+          });
+        } else {
+          // If still have articles, try clicking again and check once more
+          if (newChatButton) {
+            console.log("Articles still present. Trying to click new chat button again...");
+            newChatButton.click();
+            
+            // Second check after another delay
+            setTimeout(() => {
+              const finalArticleCount = document.querySelectorAll('article').length;
+              console.log(`Final check article count: ${finalArticleCount}`);
+              
+              // Determine final success status
+              if (finalArticleCount === 0) {
+                resolve({ 
+                  success: true, 
+                  message: "New chat created successfully on second attempt"
+                });
+              } else {
+                resolve({ 
+                  success: false, 
+                  message: `Failed to create new chat. Articles still present: ${finalArticleCount}`
+                });
+              }
+            }, 1500); // Longer second check delay
+          } else {
+            resolve({ 
+              success: false, 
+              message: "Button disappeared after first click but articles still present"
+            });
+          }
+        }
+      }, 800); // Initial check delay
+    });
   } else {
     console.log("ChatGPT New chat button not found");
-    return { success: false, error: "Button not found" };
+    return { 
+      success: false, 
+      error: "Button not found"
+    };
   }
 }
