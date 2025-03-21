@@ -476,7 +476,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     sendResponse({ success: true });
     return true;
-  }  
+  }
+  
+  if (request.action === "clearCache") {
+    console.log("Clearing Q&A cache manually...");
+    questionCache = [];
+    answerCache = [];
+    chrome.storage.local.set({
+      'questionCache': questionCache,
+      'answerCache': answerCache
+    }, function() {
+      console.log("Cache cleared successfully");
+      sendResponse({ success: true });
+    });
+    return true; // Keep the message channel open for async response
+  }
+  
 
 });
 

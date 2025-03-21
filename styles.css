@@ -590,3 +590,19 @@ input:checked + .slider:before {
   margin-top: 0;
 }
 
+/* Dark mode style for the "Clear Q&A Cache" button */
+#clearCacheButton {
+  background-color: #ff3b30; /* red background for a "destructive" look */
+  color: #ffffff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background-color 0.2s ease;
+}
+
+#clearCacheButton:hover {
+  background-color: #e62e24; /* slightly darker red on hover */
+  opacity: 0.95;
+}

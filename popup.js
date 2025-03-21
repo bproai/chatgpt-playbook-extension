@@ -266,7 +266,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
-    
+
+  const clearCacheBtn = document.getElementById("clearCacheButton");
+  if (clearCacheBtn) {
+    clearCacheBtn.addEventListener("click", function() {
+      chrome.runtime.sendMessage({ action: "clearCache" }, function(response) {
+        if (response && response.success) {
+          alert("Cache cleared successfully");
+        } else {
+          alert("Failed to clear cache");
+        }
+      });
+    });
+  }    
   
   // Preview API URL as user types
   const apiHostInput = document.getElementById('apiHost');
