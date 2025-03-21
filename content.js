@@ -1159,9 +1159,16 @@ function registerWithBackground() {
   const platform = getCurrentPlatform();
   if (!platform) return;
   
+  const tabInfo = {
+    title: document.title,
+    url: window.location.href,
+    favicon: getFaviconUrl()
+  };
+  
   chrome.runtime.sendMessage({
     action: "registerTab",
-    platform: platform
+    platform: platform,
+    tabInfo: tabInfo  // Include tab info during registration
   }, response => {
     if (response && response.success) {
       console.log(`Tab registered with background script, tabId: ${response.tabId}`);
@@ -1187,4 +1194,90 @@ window.addEventListener('unload', () => {
   if (answerObserver) {
     answerObserver.disconnect();
   }
+});
+
+
+// Add these functions to content.js
+
+// Function to send tab information to the background script
+function sendTabInfo() {
+  console.log("[DEBUG] sendTabInfo called with title:", document.title);
+  console.log("[DEBUG] Current URL:", window.location.href);
+
+  const tabInfo = {
+    title: document.title,
+    url: window.location.href,
+    favicon: getFaviconUrl()
+  };
+  
+  console.log("Sending tab info:", tabInfo);
+  
+  chrome.runtime.sendMessage({
+    action: "updateTabInfo",
+    data: tabInfo
+  }, response => {
+    if (response && response.success) {
+      console.log("Tab info successfully sent");
+    } else {
+      console.log("Error sending tab info:", response?.error);
+    }
+  });
+}
+
+// Function to get favicon URL
+function getFaviconUrl() {
+  // Try standard favicon link
+  const faviconLink = document.querySelector('link[rel="icon"]') || 
+                       document.querySelector('link[rel="shortcut icon"]');
+  if (faviconLink && faviconLink.href) {
+    return faviconLink.href;
+  }
+  
+  // Fallback to default favicon location
+  return window.location.origin + "/favicon.ico";
+}
+
+// Set up tab info reporting
+function setupTabInfoReporting() {
+  // Send initial tab info
+  sendTabInfo();
+  
+  // Setup periodic updates
+  setInterval(sendTabInfo, 30000); // Every 30 seconds
+  
+  // Listen for title changes
+  const titleObserver = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'childList' || mutation.type === 'characterData') {
+        sendTabInfo();
+        break;
+      }
+    }
+  });
+  
+  // Start observing title element if it exists
+  const titleElement = document.querySelector('title');
+  if (titleElement) {
+    titleObserver.observe(titleElement, { 
+      childList: true, 
+      characterData: true, 
+      subtree: true 
+    });
+  }
+  
+  // Also send updates when the URL changes
+  let lastUrl = window.location.href;
+  setInterval(() => {
+    const currentUrl = window.location.href;
+    if (currentUrl !== lastUrl) {
+      lastUrl = currentUrl;
+      sendTabInfo();
+    }
+  }, 1000); // Check URL changes every second
+}
+
+// Call this function when the page is loaded
+window.addEventListener('load', () => {
+  // Wait a moment for everything to load properly
+  setTimeout(setupTabInfoReporting, 1000);
 });

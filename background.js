@@ -15,6 +15,7 @@ let pendingTabRegistrations = [];
 
 let registeredTabs = {};
 
+const tabInfoMap = new Map();
 
 // Load cached data from storage on startup
 function initializeState() {
@@ -433,10 +434,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const tabInfo = {
       url: sender.tab.url || "unknown",
       platform: request.platform,
-      lastActive: Date.now()
+      lastActive: Date.now(),
+      title: sender.tab.title || null,  // Include tab title
+      favicon: request.tabInfo ? request.tabInfo.favicon : null
     };
     
-    console.log(`Tab ${tabId} registered with platform: ${request.platform}`);
+    console.log(`Tab ${tabId} registered with platform: ${request.platform} and title: ${tabInfo.title}`);
     registeredTabs[tabId] = tabInfo;
     
     // If WebSocket is connected, send tab registration
@@ -446,7 +449,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         type: 'register_tab',
         tabId: tabId.toString(),
         platform: request.platform,
-        url: sender.tab.url || "unknown"
+        url: sender.tab.url || "unknown",
+        title: sender.tab.title || null  // Send title information
       });
     } else {
       console.log(`WebSocket not connected or not ready, can't register tab ${tabId}`);
@@ -458,7 +462,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       pendingTabRegistrations.push({
         tabId: tabId.toString(),
         platform: request.platform,
-        url: sender.tab.url || "unknown"
+        url: sender.tab.url || "unknown",
+        title: sender.tab.title || null  // Include title in pending registrations
       });
     }
     
@@ -491,9 +496,73 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     });
     return true; // Keep the message channel open for async response
   }
+
+  if (request.action === "updateTabInfo") {
+    // Get tab ID and tab info
+    const tabId = sender.tab.id.toString();
+    const tabInfo = request.data;
+    
+    console.log(`[DEBUG] Background received tab info for tab ${tabId}:`, tabInfo);
+    
+    // Store the tab info
+    tabInfoMap.set(tabId, tabInfo);
+    
+    // Format the message for WebSocket
+    const tabInfoMessage = {
+      type: "tabInfo",
+      tabId: tabId,
+      title: tabInfo.title,
+      url: tabInfo.url,
+      favicon: tabInfo.favicon
+    };
+    
+
+    // Send to WebSocket connection
+    // sendToWebSocket(JSON.stringify(tabInfoMessage));
+
+    // If WebSocket is connected, send tab info
+    if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
+      console.log("[DEBUG] Sending tabInfo message to WebSocket:", tabInfoMessage);
+      sendWebSocketMessage(tabInfoMessage);
+    } else {
+      console.log(`WebSocket not connected or not ready, can't send tab info for ${tabId}`);
+      console.log(`WebSocket status: ${wsConnection ? wsConnection.readyState : "null"}`);
+      // Store for later registration when WebSocket connects
+    }
+    
+    sendResponse({ success: true });
+    return true;
+  }  
   
 
 });
+
+// function sendToWebSocket(message) {
+//   // Check if we have a WebSocket connection
+//   if (typeof webSocketConnection !== 'undefined' && webSocketConnection) {
+//     webSocketConnection.send(message);
+//     return;
+//   }
+  
+//   // Otherwise use the fetch API to forward to your backend
+//   chrome.storage.sync.get(['apiUrl'], async function(result) {
+//     try {
+//       const apiUrl = result.apiUrl || 'http://localhost:3030';
+      
+//       await fetch(`${apiUrl}/api/message`, {
+//         method: 'POST',
+//         headers: {
+//           'Content-Type': 'application/json'
+//         },
+//         body: message
+//       });
+      
+//       console.log("Message sent to backend via fetch");
+//     } catch (error) {
+//       console.error("Error sending message:", error);
+//     }
+//   });
+// }
 
 // Function that will be injected into the page to click the submit button
 function clickSubmitButton(platform) {
@@ -1226,3 +1295,4 @@ function clickClaudeNewChat() {
     });
   }
 }
+
