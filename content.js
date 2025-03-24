@@ -436,6 +436,54 @@ function isValidAnswer(richAnswer, modelInfo, answerElement) {
   return true;
 }
 
+// When processing Claude answers, check for max length warnings
+function checkForMaxLengthWarning(answerElement) {
+  // Only run this check on Claude
+  const hostname = window.location.hostname;
+  if (!hostname.includes('claude.ai')) return;
+  
+  console.log("Checking for Claude max length warning");
+  
+  // Look for the specific warning element
+  const warningElement = document.querySelector('div[data-testid="message-warning"]');
+  if (!warningElement) {
+    console.log("No Claude max length warning found");
+    return;
+  }
+  
+  // Extract the warning text
+  const warningText = warningElement.textContent || '';
+  
+  // Look for Claude's exact warning phrase
+  const CLAUDE_WARNING_PHRASE = "Claude hit the max length for a message and has paused its response. You can write Continue to keep the chat going.";
+  
+  // Check if warning contains the exact phrase or a close variation
+  if (warningText.includes(CLAUDE_WARNING_PHRASE) || 
+      (warningText.includes("Claude hit the max length") && 
+       warningText.includes("paused its response") && 
+       warningText.includes("Continue to keep the chat going"))) {
+    
+    console.log("Claude max length warning detected:", warningText);
+    
+    // Send a WebSocket message about the detected warning
+    chrome.runtime.sendMessage({
+      action: "sendWebSocketMessage",
+      data: {
+        type: 'claudeContWarn',
+        content: {
+          warning: warningText,
+          timestamp: new Date().toISOString(),
+          platform: 'claude'
+        }
+      }
+    }, response => {
+      console.log('Sent Claude continuation warning to WebSocket:', response);
+    });
+  } else {
+    console.log("Warning doesn't match Claude max length message");
+  }
+}
+
 // Process a found answer element
 function processAnswer(latestAnswer) {
   // Skip if this answer element was already processed
@@ -511,6 +559,10 @@ function processAnswer(latestAnswer) {
         console.error("Failed to click copy button:", response ? response.error : "Unknown error");
     }
   });
+
+  if (getCurrentPlatform() === 'claude') {
+    checkForMaxLengthWarning(latestAnswer);
+  }
 }
 
 // Store a validated answer
