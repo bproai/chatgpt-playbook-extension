@@ -389,7 +389,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       function: extractContentDirectly
     })
     .then(results => {
-      console.log("Copy button click script executed:", results);
+      console.log("ExtractContent script executed:", results);
       
       if (results && results[0] && results[0].result && results[0].result.success) {
         // If copy was successful and we got the content directly

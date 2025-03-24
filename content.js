@@ -552,12 +552,12 @@ function processAnswer(latestAnswer) {
       if (response.contentExtracted) {
         console.log("Content successfully extracted and sent via WebSocket, length:", response.contentLength);
       } else {
-        console.log("Copy button clicked but content not directly extracted");
+        console.log("ExtractContent script executed but content not directly extracted");
       }
     } else {
       const platform = getCurrentPlatform();
       if (platform!=='chatgpt') {
-        console.log("Copy button click action skipped for Claude.");
+        console.log("ExtractContent script action skipped for Claude.");
       }
       else 
         console.error("Failed to click copy button:", response ? response.error : "Unknown error");
