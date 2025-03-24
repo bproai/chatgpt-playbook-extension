@@ -477,7 +477,11 @@ function checkForMaxLengthWarning(answerElement) {
         }
       }
     }, response => {
-      console.log('Sent Claude continuation warning to WebSocket:', response);
+      if (chrome.runtime.lastError) {
+        console.log('Error sending Claude warning: ', chrome.runtime.lastError);
+      } else {
+        console.log('Sent Claude continuation warning to WebSocket:', response);
+      }
     });
   } else {
     console.log("Warning doesn't match Claude max length message");
