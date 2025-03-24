@@ -6,6 +6,7 @@ let answerCache = [];
 let uploadInProgress = false;
 const UPLOAD_INTERVAL = 30000; // Upload every 30 seconds
 const MAX_CACHE_SIZE = 100;
+const AUTH_TOKEN = "K9FnT7X3pL2QzA8mB6vD1yG5sH4jR0cE";
 
 let wsConnection = null;
 let wsReconnectTimer = null;
@@ -857,22 +858,31 @@ function connectToWebSocket(wsUrl) {
       try {
         const message = JSON.parse(event.data);
         
+        // Validate the message token
+        if (message.token !== AUTH_TOKEN) {
+          console.error('Authentication failed: invalid or missing token');
+          return;
+        }
+        
+        // Remove token before processing the message
+        const { token, ...messageData } = message;
+        
         // Extract routing information
-        const targetType = message.targetType || 'broadcast'; // 'broadcast', 'platform', 'client'
-        const targetId = message.targetId; // tabId or platform name
+        const targetType = messageData.targetType || 'broadcast'; // 'broadcast', 'platform', 'client'
+        const targetId = messageData.targetId; // tabId or platform name
         
         // Handle insertPrompt message
-        if (message.type === 'insertPrompt') {
-          routeMessageToContent(message, targetType, targetId);
+        if (messageData.type === 'insertPrompt') {
+          routeMessageToContent(messageData, targetType, targetId);
         } 
         // Add new handler for creating a new chat
-        else if (message.type === 'newChat') {
+        else if (messageData.type === 'newChat') {
           // Handle new chat request
-          handleNewChatRequest(message, targetType, targetId);
+          handleNewChatRequest(messageData, targetType, targetId);
         }        
         // Add other message types as needed
         else {
-          console.log(`Unknown message type: ${message.type}`);
+          console.log(`Unknown message type: ${messageData.type}`);
         }
       } catch (error) {
         console.error('Error processing WebSocket message:', error);
@@ -909,7 +919,15 @@ function scheduleReconnect(wsUrl) {
 // Function to send message to WebSocket
 function sendWebSocketMessage(message) {
   if (wsConnection && wsConnection.readyState === WebSocket.OPEN) {
-    const messageString = typeof message === 'string' ? message : JSON.stringify(message);
+    // Add the auth token to the message
+    const messageWithToken = typeof message === 'string'
+      ? { type: 'string_message', content: message, token: AUTH_TOKEN }
+      : { ...message, token: AUTH_TOKEN };
+    
+    const messageString = typeof message === 'string' 
+      ? JSON.stringify(messageWithToken) // Convert string messages to objects with token
+      : JSON.stringify(messageWithToken);
+      
     wsConnection.send(messageString);
     return true;
   }
