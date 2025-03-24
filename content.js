@@ -469,7 +469,7 @@ function checkForMaxLengthWarning(answerElement) {
     chrome.runtime.sendMessage({
       action: "sendWebSocketMessage",
       data: {
-        type: 'claudeContWarn',
+        type: 'claudeContinuationWarning',
         content: {
           warning: warningText,
           timestamp: new Date().toISOString(),
