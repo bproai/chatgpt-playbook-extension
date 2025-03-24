@@ -468,13 +468,13 @@ function processAnswer(latestAnswer) {
           console.log("Answer is now valid, processing");
           storeValidAnswer(latestAnswer, updatedRichAnswer, updatedModelInfo);
           
-          // Call the background script to handle the copy button click
-          console.log("Sending clickCopyButton message to background script");
+          // Extract content directly
+          console.log("Sending content extraction request to background script");
           chrome.runtime.sendMessage({
-            action: "clickCopyButton",
+            action: "extractContent",
             platform: getCurrentPlatform()
           }, response => {
-            console.log("Background script response to clickCopyButton:", response);
+            console.log("Background script response to content extraction:", response);
           });
         } else {
           console.log("Answer still invalid after retry");
@@ -488,13 +488,13 @@ function processAnswer(latestAnswer) {
   // Answer is valid, store it
   storeValidAnswer(latestAnswer, richAnswer, modelInfo);
   
-  // Call the background script to handle the copy button click
-  console.log("Sending clickCopyButton message to background script");
+  // Extract content directly
+  console.log("Sending content extraction request to background script");
   chrome.runtime.sendMessage({
-    action: "clickCopyButton",
+    action: "extractContent",
     platform: getCurrentPlatform()
   }, response => {
-    console.log("Background script response to clickCopyButton:", response);
+    console.log("Background script response to content extraction:", response);
     
     if (response && response.success) {
       if (response.contentExtracted) {

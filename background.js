@@ -376,16 +376,16 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if (request.action === "clickCopyButton") {
+  if (request.action === "extractContent") {
     // Get the tab ID from the sender
     const tabId = sender.tab.id;
     
-    console.log("Received clickCopyButton request");
+    console.log("Received content extraction request");
     
     // Execute a script in the tab to click the copy button
     chrome.scripting.executeScript({
       target: { tabId: tabId },
-      function: clickCopyButton
+      function: extractContentDirectly
     })
     .then(results => {
       console.log("Copy button click script executed:", results);
@@ -597,7 +597,7 @@ function clickSubmitButton(platform) {
 }
 
 // Function that will be injected into the page to click the copy button
-function clickCopyButton() {
+function extractContentDirectly() {
   console.log(`Attempting to click copy button`);
   
   // Platform detection based on hostname, same as in the clickSubmitButton function
@@ -607,7 +607,7 @@ function clickCopyButton() {
   
   if (isClaude) {
     // Claude-specific implementation
-    console.log("Working with Claude, looking for Claude copy button");
+    console.log(`Extracting content directly without clicking buttons`);
     
     // Find all copy buttons in Claude's interface - they have a data-testid="action-bar-copy"
     const claudeCopyButtons = document.querySelectorAll('button[data-testid="action-bar-copy"]');
@@ -640,13 +640,6 @@ function clickCopyButton() {
           }
         }
         console.log("Extracted Claude content length:", messageContent.length);
-      }
-      
-      // Try to click the button, but catch any errors
-      try {
-        lastCopyButton.click();
-      } catch (error) {
-        console.warn("Claude copy button click failed, but continuing:", error);
       }
       
       return {
@@ -688,10 +681,7 @@ function clickCopyButton() {
         }
         console.log("Extracted content length:", messageContent.length);
       }
-      
-      // Click the button
-      lastCopyButton.click();
-      
+            
       return {
         success: true, 
         content: messageContent,
