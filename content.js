@@ -25,6 +25,8 @@ let lastQuestionTimestamp = null;
 let questionId = null;
 let isWaitingForAnswer = false;
 let answerObserver = null;
+let isExtensionTriggeredSend = false;
+
 
 // Get current platform
 function getCurrentPlatform() {
@@ -33,6 +35,95 @@ function getCurrentPlatform() {
   if (hostname.includes('chatgpt.com')) return 'chatgpt';
   if (hostname.includes('claude.ai')) return 'claude';
   return null;
+}
+
+// Add this function to content.js
+function setupSendButtonObserver() {
+  const platform = getCurrentPlatform();
+  if (!platform) return;
+  
+  console.log(`Setting up send button observer for ${platform}`);
+  
+  // Select the appropriate button selector based on platform
+  const buttonSelector = platform === 'claude' 
+    ? 'button[aria-label="Send Message"]' 
+    : 'button[data-testid="send-button"]';
+  
+  // Find container to observe
+  const container = document.querySelector('main') || document;
+  
+  // Create observer
+  const buttonObserver = new MutationObserver(() => {
+    const sendButton = document.querySelector(buttonSelector);
+    if (sendButton) {
+      // Only add listener if not already attached
+      if (!sendButton.dataset.monitorAttached) {
+        console.log(`Found ${platform} send button, attaching click monitor`);
+        
+        // Add click event listener
+        sendButton.addEventListener('click', handleUserSendButtonClick);
+        
+        // Mark as attached to avoid duplicate listeners
+        sendButton.dataset.monitorAttached = "true";
+      }
+    }
+  });
+  
+  // Start observing document for send button
+  buttonObserver.observe(container, {
+    childList: true,
+    subtree: true
+  });
+  
+  // Check immediately for existing button
+  const existingSendButton = document.querySelector(buttonSelector);
+  if (existingSendButton && !existingSendButton.dataset.monitorAttached) {
+    console.log(`Found existing ${platform} send button, attaching click monitor`);
+    existingSendButton.addEventListener('click', handleUserSendButtonClick);
+    existingSendButton.dataset.monitorAttached = "true";
+  }
+}
+
+// Add this function to handle send button clicks
+function handleUserSendButtonClick(event) {
+  // Skip if this is a programmatic send triggered by the extension
+  if (isExtensionTriggeredSend) {
+    console.log("Ignoring programmatic send triggered by extension");
+    isExtensionTriggeredSend = false; // Reset for next time
+    return;
+  }
+  
+  console.log("User clicked send button");
+  
+  const platform = getCurrentPlatform();
+  if (!platform) return;
+  
+  // Get the input box based on platform
+  const inputSelector = platform === 'claude' ? CLAUDE_INPUT_SELECTOR : CHATGPT_INPUT_SELECTOR;
+  const inputBox = document.querySelector(inputSelector);
+  
+  if (!inputBox) {
+    console.log("Cannot find input box");
+    return;
+  }
+  
+  // Get the question text
+  let questionText = "";
+  if (platform === 'claude') {
+    questionText = inputBox.textContent ? inputBox.textContent.trim() : "";
+  } else {
+    questionText = inputBox.value ? inputBox.value.trim() : "";
+  }
+  
+  if (!questionText) {
+    console.log("No question text found");
+    return;
+  }
+    
+  console.log(`Captured user question: ${questionText.substring(0, 50)}...`);
+  
+  // Start tracking this question using the existing pattern
+  startAnswerMonitoring(questionText);
 }
 
 // Toggle search button state (enabled/disabled)
@@ -1075,10 +1166,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         // Send success response
         sendResponse({ success: true });
         
-        // Only call the background script if autoSubmit is enabled
+        // Set the flag to true right before auto-submit to prevent double handling
         if (request.autoSubmit) {
           // Get current tab ID and call the background script to execute the click
           console.log("Auto-submit is enabled, will attempt to submit prompt");
+          
+          // Set flag in the content script context
+          isExtensionTriggeredSend = true;
+          
           setTimeout(() => {
             console.log("Sending clickSubmitButton message to background script");
             chrome.runtime.sendMessage({
@@ -1086,6 +1181,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
               platform: platform
             }, response => {
               console.log("Background script response to clickSubmitButton:", response);
+              // If click failed, reset the flag
+              if (!response || !response.success) {
+                isExtensionTriggeredSend = false;
+              }
             });
           }, 500);
         }
@@ -1161,6 +1260,8 @@ window.addEventListener('load', () => {
       return;
     }
     
+    setupSendButtonObserver();
+
     // Set up mutation observer to detect when new messages are added
     const conversationContainer = document.querySelector('main') || document;
     

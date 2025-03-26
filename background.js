@@ -569,31 +569,45 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 function clickSubmitButton(platform) {
   console.log(`Attempting to click submit button for ${platform}`);
   
+  // Set flag to indicate this is an extension-triggered click
+  window.isExtensionTriggeredSend = true;
+  
   if (platform === 'chatgpt') {
-    // ChatGPT - Keep the existing implementation that works
+    // ChatGPT implementation
     const button = document.querySelector('button[data-testid="send-button"]');
     if (button && !button.disabled) {
       console.log("Found and clicking ChatGPT send button");
       button.click();
+      // Add timeout to ensure event handling completes before resetting flag
+      setTimeout(() => {
+        window.isExtensionTriggeredSend = false;
+      }, 100);
       return true;
     } else {
       console.log("ChatGPT button not found or is disabled");
+      window.isExtensionTriggeredSend = false; // Reset flag if no button found
       return false;
     }
   } 
   else if (platform === 'claude') {
-    // Claude - Based on the HTML snippet provided
+    // Claude implementation
     const claudeButton = document.querySelector('button[aria-label="Send Message"]');
     if (claudeButton && !claudeButton.disabled) {
       console.log("Found and clicking Claude send button");
       claudeButton.click();
+      // Add timeout to ensure event handling completes before resetting flag
+      setTimeout(() => {
+        window.isExtensionTriggeredSend = false;
+      }, 100);
       return true;
     } else {
       console.log("Claude button not found or is disabled");
+      window.isExtensionTriggeredSend = false; // Reset flag if no button found
       return false;
     }
   }
   
+  window.isExtensionTriggeredSend = false; // Reset flag if platform not supported
   return false;
 }
 
