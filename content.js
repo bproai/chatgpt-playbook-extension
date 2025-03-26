@@ -45,9 +45,15 @@ function setupSendButtonObserver() {
   console.log(`Setting up send button observer for ${platform}`);
   
   // Select the appropriate button selector based on platform
-  const buttonSelector = platform === 'claude' 
-    ? 'button[aria-label="Send Message"]' 
-    : 'button[data-testid="send-button"]';
+  let buttonSelector;
+  if (platform === 'claude') {
+    // Use a more general selector for Claude to catch all variations
+    buttonSelector = 'button[aria-label*="end message" i], button[aria-label*="end Message" i]';
+  } else {
+    buttonSelector = 'button[data-testid="send-button"]';
+  }
+  
+  console.log(`Using button selector: ${buttonSelector}`);
   
   // Find container to observe
   const container = document.querySelector('main') || document;
@@ -60,8 +66,8 @@ function setupSendButtonObserver() {
       if (!sendButton.dataset.monitorAttached) {
         console.log(`Found ${platform} send button, attaching click monitor`);
         
-        // Add click event listener
-        sendButton.addEventListener('click', handleUserSendButtonClick);
+        // Add click event listener with capture to make sure it fires
+        sendButton.addEventListener('click', handleUserSendButtonClick, true);
         
         // Mark as attached to avoid duplicate listeners
         sendButton.dataset.monitorAttached = "true";
@@ -79,7 +85,7 @@ function setupSendButtonObserver() {
   const existingSendButton = document.querySelector(buttonSelector);
   if (existingSendButton && !existingSendButton.dataset.monitorAttached) {
     console.log(`Found existing ${platform} send button, attaching click monitor`);
-    existingSendButton.addEventListener('click', handleUserSendButtonClick);
+    existingSendButton.addEventListener('click', handleUserSendButtonClick, true);
     existingSendButton.dataset.monitorAttached = "true";
   }
 }
