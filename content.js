@@ -249,27 +249,29 @@ function extractRichAnswer(answerElement) {
   const platform = getCurrentPlatform();
 
   if (platform !== 'chatgpt') {
-    // For Claude, the structure is different
-    // First, find the container with the message content
-    const claudeMessageContainer = answerElement.closest('.font-claude-message') || answerElement;
+    // For Claude, find the complete message container
+    const messageContainer = answerElement.closest('[data-is-streaming="false"]');
     
-    // Try to locate the content grid where the actual message is
-    const contentGrid = claudeMessageContainer.querySelector('div > div.grid.gap-2\\.5');
-    
-    if (contentGrid) {
-      // Use the content grid if found
-      const htmlContent = contentGrid.outerHTML;
-      const plainText = contentGrid.innerText || contentGrid.textContent;
-      return { plain_text: plainText.trim(), html: htmlContent.trim() };
-    } else {
-      // Fallback to the message container if grid not found
-      const htmlContent = claudeMessageContainer.outerHTML;
-      const plainText = claudeMessageContainer.innerText || claudeMessageContainer.textContent;
-      return { plain_text: plainText.trim(), html: htmlContent.trim() };
+    if (messageContainer) {
+      // Get the entire Claude message content
+      const claudeContent = messageContainer.querySelector('.font-claude-message');
+      
+      if (claudeContent) {
+        // Extract the entire content
+        const htmlContent = claudeContent.outerHTML;
+        const plainText = claudeContent.innerText || claudeContent.textContent;
+        return { plain_text: plainText.trim(), html: htmlContent.trim() };
+      }
     }
+    
+    // Fallback to the original approach if the above doesn't work
+    const claudeMessageContainer = answerElement.closest('.font-claude-message') || answerElement;
+    const htmlContent = claudeMessageContainer.outerHTML;
+    const plainText = claudeMessageContainer.innerText || claudeMessageContainer.textContent;
+    return { plain_text: plainText.trim(), html: htmlContent.trim() };
   }
 
-  // Try to locate the rich content container
+  // For ChatGPT (original implementation)
   let container = answerElement.querySelector('.markdown.prose') ||
                   answerElement.querySelector('.markdown') ||
                   answerElement.querySelector('.prose');
