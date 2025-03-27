@@ -126,7 +126,7 @@ function handleUserSendButtonClick(event) {
     return;
   }
     
-  console.log(`Captured user question: ${questionText.substring(0, 50)}...`);
+  // console.log(`Captured user question: ${questionText.substring(0, 50)}...`);
   
   // Start tracking this question using the existing pattern
   startAnswerMonitoring(questionText);
@@ -187,7 +187,7 @@ function toggleSearchButton(enabled) {
 
 // Start monitoring for answers
 function startAnswerMonitoring(questionText) {
-  console.log("Starting to monitor for answers to:", questionText);
+  // console.log("Starting to monitor for answers to:", questionText);
   
   const platform = getCurrentPlatform();
   if (!platform) return;
