@@ -250,6 +250,7 @@ function extractRichAnswer(answerElement) {
 
   if (platform !== 'chatgpt') {
     // For Claude, the structure is different
+    // updated this routine in response to Claude's new UI changes as of 2025-03-27
     
     // First, find the container with the message content - look for the complete message
     const isStreamingContainer = answerElement.closest('div[data-is-streaming]');
