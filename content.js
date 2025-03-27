@@ -48,7 +48,7 @@ function setupSendButtonObserver() {
   let buttonSelector;
   if (platform === 'claude') {
     // Use a more general selector for Claude to catch all variations
-    buttonSelector = 'button[aria-label*="end message" i], button[aria-label*="end Message" i]';
+    buttonSelector = 'button[aria-label*="Send message" i], button[aria-label*="Send Message" i]';
   } else {
     buttonSelector = 'button[data-testid="send-button"]';
   }
