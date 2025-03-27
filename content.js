@@ -249,29 +249,50 @@ function extractRichAnswer(answerElement) {
   const platform = getCurrentPlatform();
 
   if (platform !== 'chatgpt') {
-    // For Claude, find the complete message container
-    const messageContainer = answerElement.closest('[data-is-streaming="false"]');
+    // For Claude, the structure is different
     
-    if (messageContainer) {
-      // Get the entire Claude message content
-      const claudeContent = messageContainer.querySelector('.font-claude-message');
+    // First, find the container with the message content - look for the complete message
+    const isStreamingContainer = answerElement.closest('div[data-is-streaming]');
+    const claudeMessageContainer = answerElement.closest('.font-claude-message') || answerElement;
+    
+    // Try to locate all content sections within the message
+    const contentSections = claudeMessageContainer.querySelectorAll('div[class*="grid-cols-1"], div[class*="grid gap-2.5"]');
+    
+    if (contentSections && contentSections.length > 0) {
+      // Combine all content sections for complete extraction
+      let combinedHTML = "";
+      let combinedText = "";
       
-      if (claudeContent) {
-        // Extract the entire content
-        const htmlContent = claudeContent.outerHTML;
-        const plainText = claudeContent.innerText || claudeContent.textContent;
-        return { plain_text: plainText.trim(), html: htmlContent.trim() };
-      }
+      contentSections.forEach(section => {
+        combinedHTML += section.outerHTML;
+        combinedText += (section.innerText || section.textContent) + "\n\n";
+      });
+      
+      return { 
+        plain_text: combinedText.trim(), 
+        html: combinedHTML.trim() 
+      };
     }
     
-    // Fallback to the original approach if the above doesn't work
-    const claudeMessageContainer = answerElement.closest('.font-claude-message') || answerElement;
-    const htmlContent = claudeMessageContainer.outerHTML;
-    const plainText = claudeMessageContainer.innerText || claudeMessageContainer.textContent;
-    return { plain_text: plainText.trim(), html: htmlContent.trim() };
+    // If we didn't find multiple sections or if the above approach didn't work,
+    // try the original approach with the content grid
+    const contentGrid = claudeMessageContainer.querySelector('div > div.grid.gap-2\\.5');
+    
+    if (contentGrid) {
+      // Use the content grid if found
+      const htmlContent = contentGrid.outerHTML;
+      const plainText = contentGrid.innerText || contentGrid.textContent;
+      return { plain_text: plainText.trim(), html: htmlContent.trim() };
+    } else {
+      // Fallback to the message container if specific sections not found
+      const htmlContent = claudeMessageContainer.outerHTML;
+      const plainText = claudeMessageContainer.innerText || claudeMessageContainer.textContent;
+      return { plain_text: plainText.trim(), html: htmlContent.trim() };
+    }
   }
 
-  // For ChatGPT (original implementation)
+  // For ChatGPT (original implementation preserved)
+  // Try to locate the rich content container
   let container = answerElement.querySelector('.markdown.prose') ||
                   answerElement.querySelector('.markdown') ||
                   answerElement.querySelector('.prose');
