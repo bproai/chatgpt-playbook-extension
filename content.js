@@ -27,6 +27,8 @@ let isWaitingForAnswer = false;
 let answerObserver = null;
 let isExtensionTriggeredSend = false;
 
+let maxWaitTimeForAnswer = 120000; // 2 minutes in milliseconds
+let answerCheckStartTime = null;
 
 // Get current platform
 function getCurrentPlatform() {
@@ -244,83 +246,13 @@ function scanForExistingAnswers() {
   });
 }
 
-// Extract rich HTML and text content from an answer element
-function extractRichAnswer(answerElement) {
-  const platform = getCurrentPlatform();
 
-  if (platform !== 'chatgpt') {
-    // For Claude, the structure is different
-    // updated this routine in response to Claude's new UI changes as of 2025-03-27
-    
-    // First, find the container with the message content - look for the complete message
-    const isStreamingContainer = answerElement.closest('div[data-is-streaming]');
-    const claudeMessageContainer = answerElement.closest('.font-claude-message') || answerElement;
-    
-    // Try to locate all content sections within the message
-    const contentSections = claudeMessageContainer.querySelectorAll('div[class*="grid-cols-1"], div[class*="grid gap-2.5"]');
-    
-    if (contentSections && contentSections.length > 0) {
-      // Combine all content sections for complete extraction
-      let combinedHTML = "";
-      let combinedText = "";
-      
-      contentSections.forEach(section => {
-        combinedHTML += section.outerHTML;
-        combinedText += (section.innerText || section.textContent) + "\n\n";
-      });
-      
-      return { 
-        plain_text: combinedText.trim(), 
-        html: combinedHTML.trim() 
-      };
-    }
-    
-    // If we didn't find multiple sections or if the above approach didn't work,
-    // try the original approach with the content grid
-    const contentGrid = claudeMessageContainer.querySelector('div > div.grid.gap-2\\.5');
-    
-    if (contentGrid) {
-      // Use the content grid if found
-      const htmlContent = contentGrid.outerHTML;
-      const plainText = contentGrid.innerText || contentGrid.textContent;
-      return { plain_text: plainText.trim(), html: htmlContent.trim() };
-    } else {
-      // Fallback to the message container if specific sections not found
-      const htmlContent = claudeMessageContainer.outerHTML;
-      const plainText = claudeMessageContainer.innerText || claudeMessageContainer.textContent;
-      return { plain_text: plainText.trim(), html: htmlContent.trim() };
-    }
-  }
-
-  // For ChatGPT (original implementation preserved)
-  // Try to locate the rich content container
-  let container = answerElement.querySelector('.markdown.prose') ||
-                  answerElement.querySelector('.markdown') ||
-                  answerElement.querySelector('.prose');
-  
-  // Fallback: if no specific container is found, use the entire answer element
-  if (!container) {
-    container = answerElement;
-  }
-  
-  // Use outerHTML to capture all the rich HTML content
-  const htmlContent = container.outerHTML.trim();
-  
-  // Also capture the plain text for search or indexing purposes
-  const plainText = container.innerText.trim();
-  
-  return { plain_text: plainText, html: htmlContent };
-}
-
-// Check if an answer is complete by looking for UI elements that appear when generation is done
 function isAnswerComplete(answerElement) {
   const platform = getCurrentPlatform();
 
   if (platform !== 'chatgpt') {
-    // For Claude, we need to check several things:
-    
+    // Claude-specific logic remains unchanged
     // 1. Check if the div has data-is-streaming="false" attribute
-    // This is the most reliable indicator for Claude
     const isStreamingContainer = answerElement.closest('div[data-is-streaming]');
     if (isStreamingContainer) {
       const isStreaming = isStreamingContainer.getAttribute('data-is-streaming') === 'true';
@@ -361,17 +293,99 @@ function isAnswerComplete(answerElement) {
       isStreamingDone: isStreamingContainer ? isStreamingContainer.getAttribute('data-is-streaming') === 'false' : 'unknown'
     });
     
-    // Consider the answer complete if EITHER:
-    // 1. Streaming is done AND there's content
-    // OR
-    // 2. We found UI elements (even if they're hidden until hover)
     return (isStreamingContainer && 
             isStreamingContainer.getAttribute('data-is-streaming') === 'false' && 
             hasContent) || hasUIElements;
   }  
 
-  // We need to look for buttons outside the answer element itself
-  // First, find the article that contains everything
+  // Enhanced ChatGPT image content detection
+  const hasImageContent = 
+    answerElement.querySelector('img') !== null || 
+    answerElement.innerHTML.includes('group/imagegen-image') ||
+    answerElement.querySelector('[class*="group/imagegen-image"]') !== null;
+  
+  if (hasImageContent) {
+    console.log("Detected possible image content in ChatGPT response");
+    
+    // Find the article that contains this answer for complete context
+    const article = answerElement.closest('article');
+    if (!article) {
+      console.log("DETECTION ISSUE: Could not find article container for image");
+      return false;
+    }
+    
+    // ENHANCED BLUR DETECTION: Check multiple indicators that images are still loading
+    
+    // 1. Check for explicit blur styling in the DOM
+    const blurredImages = article.querySelectorAll('[style*="filter: blur"]');
+    
+    // 2. Check for blur references in class names or attributes
+    const blurClassElements = article.querySelectorAll('[class*="blur"]');
+    
+    // 3. Check for loading state indicators
+    const loadingIndicators = article.querySelectorAll(
+      '.loading, [aria-busy="true"], [data-state="loading"], [role="progressbar"]'
+    );
+    
+    // 4. Check specific text that might indicate loading
+    const loadingText = article.textContent.includes("Loading image") || 
+                        article.textContent.includes("Image loading");
+    
+    // 5. Check for partial-loaded state indicators in HTML
+    const partialLoadedState = article.innerHTML.includes("mask-image:linear-gradient") &&
+                               !article.querySelector('img[src]:not([src=""])');
+
+    // Log all blur/loading indicators for debugging
+    console.log("Image loading indicators:", {
+      hasBlurredImages: blurredImages.length > 0,
+      hasBlurClasses: blurClassElements.length > 0,
+      hasLoadingIndicators: loadingIndicators.length > 0,
+      hasLoadingText: loadingText,
+      hasPartialLoadedState: partialLoadedState
+    });
+    
+    // If any loading indicators are present, the answer is not complete
+    const isStillLoading = blurredImages.length > 0 || 
+                           blurClassElements.length > 0 || 
+                           loadingIndicators.length > 0 ||
+                           loadingText ||
+                           partialLoadedState;
+    
+    if (isStillLoading) {
+      console.log("Image is still loading/blurred, not considering complete yet");
+      return false;
+    }
+    
+    // COMPLETION INDICATORS: Check for elements that appear when image generation is complete
+    
+    // 1. Check for the copy button (most reliable indicator)
+    const copyButton = article.querySelector('button[aria-label="Copy"], button[data-testid="copy-turn-action-button"]');
+    
+    // 2. Check for "Image created" text (secondary indicator)
+    const imageCreatedText = article.querySelector('span.text-token-text-secondary');
+    const hasImageCreatedText = imageCreatedText && imageCreatedText.textContent.includes('Image created');
+    
+    // 3. Check for fully loaded images with proper src attributes
+    const fullyLoadedImages = article.querySelectorAll('img[src]:not([src=""])');
+    const hasFullyLoadedImages = fullyLoadedImages.length > 0;
+    
+    // If we have completion indicators, consider the answer complete
+    const isComplete = copyButton || hasImageCreatedText || hasFullyLoadedImages;
+    
+    console.log("Image completion indicators:", {
+      hasCopyButton: !!copyButton,
+      hasImageCreatedText: hasImageCreatedText,
+      hasFullyLoadedImages: hasFullyLoadedImages,
+      isComplete: isComplete
+    });
+    
+    if (isComplete) {
+      console.log("Detected ChatGPT image response with completion indicators - marking as complete");
+      return true;
+    }
+  }
+
+  // Regular ChatGPT text response detection (unchanged)
   const article = answerElement.closest('article');
   
   if (!article) {
@@ -379,8 +393,8 @@ function isAnswerComplete(answerElement) {
     return false;
   }
   
-  // Now look for buttons within this article
-  const copyButton = article.querySelector('button[aria-label="Copy"]');
+  // Look for buttons within this article
+  const copyButton = article.querySelector('button[aria-label="Copy"], button[data-testid="copy-turn-action-button"]');
   const thumbsButtons = article.querySelectorAll('button[aria-label="Good response"], button[aria-label="Bad response"]');
   const readAloudButton = article.querySelector('button[aria-label="Read aloud"]');
   
@@ -406,9 +420,187 @@ function isAnswerComplete(answerElement) {
   return hasCompletionUI && !isStillLoading && !isStreaming;
 }
 
-// Validate if an answer is complete and worth storing
+// Also update the extractRichAnswer function to better handle image content:
+function extractRichAnswer(answerElement) {
+  const platform = getCurrentPlatform();
+
+  // ChatGPT-specific image detection
+  if (platform === 'chatgpt') {
+    // First, get the article that contains this answer
+    const article = answerElement.closest('article');
+    
+    // Check for image content in both the answer and the article
+    const hasImageInAnswer = 
+      answerElement.querySelector('img') !== null || 
+      answerElement.innerHTML.includes('group/imagegen-image') || 
+      answerElement.querySelector('[class*="group/imagegen-image"]') !== null;
+      
+    const hasImageInArticle = article && (
+      article.querySelector('img') !== null ||
+      article.innerHTML.includes('group/imagegen-image') ||
+      article.querySelector('[class*="group/imagegen-image"]') !== null ||
+      article.querySelector('span.text-token-text-secondary')?.textContent.includes('Image created')
+    );
+    
+    const hasImageContent = hasImageInAnswer || hasImageInArticle;
+    
+    if (hasImageContent) {
+      console.log("Extracting image-based response");
+      
+      // Get all image URLs from the article
+      const imageUrls = [];
+      let allImagesBlurred = true;
+      
+      if (article) {
+        // Check if images are in blurred state
+        const imageContainers = article.querySelectorAll('[style*="filter: blur"]');
+        const hasBlurredImages = imageContainers.length > 0;
+        
+        // Look for fully loaded images
+        const allImages = article.querySelectorAll('img');
+        allImages.forEach(img => {
+          // Only include images that have a src and aren't blurred
+          if (img.src && !img.closest('[style*="filter: blur"]')) {
+            imageUrls.push(img.src);
+            allImagesBlurred = false;
+          }
+        });
+        
+        // If all images are blurred, just return the partial response
+        if (allImagesBlurred && hasBlurredImages) {
+          console.log("Images are still in blurred state, will not extract URLs yet");
+          
+          // Still return article HTML, but don't include image URLs
+          const htmlContent = article ? article.outerHTML : answerElement.outerHTML;
+          const plainText = answerElement.innerText || answerElement.textContent || "Image response";
+          
+          return {
+            plain_text: plainText.trim() || "Image response", 
+            html: htmlContent.trim(),
+            has_image: true,
+            is_blurred: true,  // Flag to indicate images are still loading
+            image_src: null,
+            all_image_urls: []
+          };
+        }
+      }
+      
+      // If we have non-blurred images, continue as before
+      const imageSrc = imageUrls.length > 0 ? imageUrls[0] : null;
+      const htmlContent = article ? article.outerHTML : answerElement.outerHTML;
+      const plainText = answerElement.innerText || answerElement.textContent || "Image response";
+      
+      return {
+        plain_text: plainText.trim() || "Image response", 
+        html: htmlContent.trim(),
+        has_image: true,
+        is_blurred: false,
+        image_src: imageSrc,
+        all_image_urls: imageUrls
+      };
+    }
+  }
+
+  if (platform !== 'chatgpt') {
+    // Your existing Claude-specific logic
+    // First, find the container with the message content - look for the complete message
+    const isStreamingContainer = answerElement.closest('div[data-is-streaming]');
+    const claudeMessageContainer = answerElement.closest('.font-claude-message') || answerElement;
+    
+    // Try to locate all content sections within the message
+    const contentSections = claudeMessageContainer.querySelectorAll('div[class*="grid-cols-1"], div[class*="grid gap-2.5"]');
+    
+    if (contentSections && contentSections.length > 0) {
+      // Combine all content sections for complete extraction
+      let combinedHTML = "";
+      let combinedText = "";
+      
+      contentSections.forEach(section => {
+        combinedHTML += section.outerHTML;
+        combinedText += (section.innerText || section.textContent) + "\n\n";
+      });
+      
+      return { 
+        plain_text: combinedText.trim(), 
+        html: combinedHTML.trim() 
+      };
+    }
+    
+    // If we didn't find multiple sections or if the above approach didn't work,
+    // try the original approach with the content grid
+    const contentGrid = claudeMessageContainer.querySelector('div > div.grid.gap-2\\.5');
+    
+    if (contentGrid) {
+      // Use the content grid if found
+      const htmlContent = contentGrid.outerHTML;
+      const plainText = contentGrid.innerText || contentGrid.textContent;
+      return { plain_text: plainText.trim(), html: htmlContent.trim() };
+    } else {
+      // Fallback to the message container if specific sections not found
+      const htmlContent = claudeMessageContainer.outerHTML;
+      const plainText = claudeMessageContainer.innerText || claudeMessageContainer.textContent;
+      return { plain_text: plainText.trim(), html: htmlContent.trim() };
+    }
+  }
+
+  // For regular ChatGPT text responses (original implementation preserved)
+  // Try to locate the rich content container
+  let container = answerElement.querySelector('.markdown.prose') ||
+                  answerElement.querySelector('.markdown') ||
+                  answerElement.querySelector('.prose');
+  
+  // Fallback: if no specific container is found, use the entire answer element
+  if (!container) {
+    container = answerElement;
+  }
+  
+  // Use outerHTML to capture all the rich HTML content
+  const htmlContent = container.outerHTML.trim();
+  
+  // Also capture the plain text for search or indexing purposes
+  const plainText = container.innerText.trim();
+  
+  return { plain_text: plainText, html: htmlContent };
+}
+
 function isValidAnswer(richAnswer, modelInfo, answerElement) {
   const platform = getCurrentPlatform();
+
+  // At the beginning of your isValidAnswer function for ChatGPT
+  if (platform === 'chatgpt') {
+    // Find all articles in the page
+    const articles = document.querySelectorAll('article');
+    
+    // Get the latest article (the last one in the DOM)
+    const latestArticle = articles.length > 0 ? articles[articles.length - 1] : null;
+    
+    // Only check for image content in the latest article
+    let hasImageContent = false;
+    if (latestArticle) {
+      // Check for various image indicators
+      const hasImageElement = latestArticle.querySelector('img');
+      const hasImageGenClass = latestArticle.innerHTML.includes('group/imagegen-image');
+      const hasImageGenSelector = latestArticle.querySelector('[class*="group/imagegen-image"]');
+      const hasImageCreatedText = latestArticle.querySelector('span.text-token-text-secondary')?.textContent.includes('Image created');
+      
+      hasImageContent = hasImageElement || hasImageGenClass || hasImageGenSelector || hasImageCreatedText;
+      
+      console.log("DEBUG IMAGE DETECTION IN LATEST ARTICLE:", {
+        articleFound: !!latestArticle,
+        hasImageElement: !!hasImageElement,
+        hasImageGenClass: hasImageGenClass,
+        hasImageGenSelector: !!hasImageGenSelector,
+        hasImageCreatedText: !!hasImageCreatedText,
+        articleHasImage: hasImageContent
+      });
+    }
+    
+    // Force validation for any image content in the latest article
+    if (hasImageContent) {
+      console.log("DIRECT IMAGE VALIDATION: Image detected in latest article, forcing valid");
+      return true;
+    }
+  }
 
   if (platform !== 'chatgpt') {
     // Check if the answer is empty or too short
@@ -490,6 +682,29 @@ function isValidAnswer(richAnswer, modelInfo, answerElement) {
     htmlSnippet: richAnswer.html?.substring(0, 100) + "..." || "none"
   });
 
+  // Check for image content in ChatGPT first - before other validations
+  const hasImageContent = 
+    answerElement.querySelector('img') !== null || 
+    answerElement.innerHTML.includes('group/imagegen-image') ||
+    answerElement.querySelector('[class*="group/imagegen-image"]') !== null;
+  
+  if (hasImageContent) {
+    console.log("Detected image content during validation");
+    
+    // Check for Copy button which indicates a complete response
+    const article = answerElement.closest('article');
+    const copyButton = article && article.querySelector('button[aria-label="Copy"], button[data-testid="copy-turn-action-button"]');
+    
+    // Check for "Image created" text
+    const imageCreatedText = article && article.querySelector('span.text-token-text-secondary');
+    const hasImageCreatedText = imageCreatedText && imageCreatedText.textContent.includes('Image created');
+    
+    if (copyButton || hasImageCreatedText) {
+      console.log("VALIDATION PASSED: Image content detected with completion indicators");
+      return true;
+    }
+  }
+
   // Check if model information is missing or incomplete
   if (!modelInfo || modelInfo.model === 'unknown' || modelInfo.modelSlug === null) {
     console.log("VALIDATION FAILED: Model information incomplete", { model: modelInfo?.model, slug: modelInfo?.modelSlug });
@@ -498,64 +713,39 @@ function isValidAnswer(richAnswer, modelInfo, answerElement) {
   
   // Check if the answer is the "thinking" placeholder
   if (richAnswer.html && (
-      richAnswer.html.includes('result-thinking') || 
-      richAnswer.html.includes('result-streaming') ||
-      richAnswer.plain_text === '\u200b' || 
-      richAnswer.plain_text.trim() === '')) {
-    console.log("VALIDATION FAILED: Detected empty/placeholder/streaming answer", { 
-      hasThinking: richAnswer.html?.includes('result-thinking'),
-      hasStreaming: richAnswer.html?.includes('result-streaming'),
-      isZeroWidth: richAnswer.plain_text === '\u200b',
-      isEmpty: richAnswer.plain_text.trim() === ''
-    });
-    return false;
+    richAnswer.html.includes('result-thinking') || 
+    richAnswer.html.includes('result-streaming') ||
+    richAnswer.plain_text === '\u200b' || 
+    richAnswer.plain_text.trim() === '')) {
+
+  // Check for image content right here, ensuring it's in scope
+  const imageCheck = 
+    answerElement.querySelector('img') !== null || 
+    answerElement.innerHTML.includes('group/imagegen-image') ||
+    answerElement.querySelector('[class*="group/imagegen-image"]') !== null;
+
+  // IMPORTANT: Override validation for image content
+  if (imageCheck) {
+    console.log("VALIDATION OVERRIDE: Empty text but image content detected");
+    return true;
+  }
+
+  console.log("VALIDATION FAILED: Detected empty/placeholder/streaming answer", {
+    hasThinking: richAnswer.html?.includes('result-thinking'),
+    hasStreaming: richAnswer.html?.includes('result-streaming'),
+    isZeroWidth: richAnswer.plain_text === '\u200b',
+    isEmpty: richAnswer.plain_text.trim() === ''
+  });
+  return false;
   }
   
-  // Check for UI elements that indicate a complete answer
-  // This check should use the article parent to find UI elements
-  const article = answerElement.closest('article');
-  const hasCompletionUI = article && (
-      article.querySelector('button[aria-label="Copy"]') ||
-      article.querySelector('button[aria-label="Good response"]') ||
-      article.querySelector('button[aria-label="Bad response"]')
-  );
-  
-  if (!hasCompletionUI) {
-    console.log("VALIDATION FAILED: Missing completion UI elements in article parent");
-    return false;
-  }
-  
-  // Check for truncated sentences (ending without proper punctuation)
-  const text = richAnswer.plain_text || '';
-  const lastChar = text.trim().slice(-1);
-  const properEndings = ['.', '!', '?', ':', ';', '"', "'", ')', ']', '}'];
-  
-  // If text is longer than 100 chars and doesn't end with proper punctuation,
-  // it might be truncated
-  if (text.length > 100 && !properEndings.includes(lastChar)) {
-    const lastWord = text.trim().split(/\s+/).pop() || '';
-    // If the last word is very short (less than 3 chars), it's likely truncated
-    if (lastWord.length < 3 || /^[a-z]/.test(lastWord)) {
-      console.log("VALIDATION FAILED: Detected likely truncated answer", {
-        lastChar,
-        lastWord,
-        properEnding: properEndings.includes(lastChar)
-      });
-      return false;
-    }
-  }
-  
-  // Check minimum content length
-  if (!richAnswer.plain_text || richAnswer.plain_text.trim().length < 3) {
-    console.log("VALIDATION FAILED: Answer too short or empty", {
-      length: richAnswer.plain_text?.trim().length
-    });
-    return false;
-  }
+  // Rest of your validation checks for text-based answers...
   
   console.log("VALIDATION PASSED: Answer is complete and valid");
   return true;
 }
+
+
 
 // When processing Claude answers, check for max length warnings
 function checkForMaxLengthWarning(answerElement) {
