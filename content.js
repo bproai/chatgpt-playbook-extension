@@ -1455,6 +1455,113 @@ chrome.storage.sync.get(['searchEnabled'], function(result) {
   }
 });
 
+function setupClaudeSendButtonStateMonitor() {
+  const platform = getCurrentPlatform();
+  if (platform !== 'claude') return;
+  
+  console.log("Setting up Claude send button state monitor");
+  
+  // Track last known input content
+  let lastKnownInputContent = "";
+  
+  // Get input content
+  function updateInputContent() {
+    const inputBox = document.querySelector(CLAUDE_INPUT_SELECTOR);
+    if (inputBox) {
+      lastKnownInputContent = inputBox.textContent ? inputBox.textContent.trim() : "";
+    }
+  }
+  
+  // Set up input content tracking
+  function setupInputTracking() {
+    const inputBox = document.querySelector(CLAUDE_INPUT_SELECTOR);
+    if (!inputBox) {
+      setTimeout(setupInputTracking, 500);
+      return;
+    }
+    
+    if (!inputBox.dataset.contentTrackingAttached) {
+      inputBox.addEventListener('input', updateInputContent);
+      inputBox.dataset.contentTrackingAttached = "true";
+    }
+  }
+  
+  // Set up the button state observer
+  function setupButtonObserver() {
+    const buttonSelector = 'button[aria-label*="Send message" i], button[aria-label*="Send Message" i]';
+    const sendButton = document.querySelector(buttonSelector);
+    
+    if (!sendButton) {
+      setTimeout(setupButtonObserver, 500);
+      return;
+    }
+    
+    if (sendButton.dataset.stateMonitorAttached) return;
+    
+    // Track current button state
+    let wasEnabled = !sendButton.hasAttribute('disabled');
+    
+    // Create observer for button state changes
+    const buttonObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'disabled') {
+          const isNowDisabled = sendButton.hasAttribute('disabled');
+          
+          // Key transition: Button was enabled -> now disabled = SUBMIT!
+          if (wasEnabled && isNowDisabled) {
+            console.log("Detected Claude message submit: Button changed from enabled to disabled");
+            
+            if (lastKnownInputContent) {
+              console.log(`Captured message: "${lastKnownInputContent.substring(0, 50)}${lastKnownInputContent.length > 50 ? '...' : ''}"`);
+              
+              // Use your existing monitoring function
+              startAnswerMonitoring(lastKnownInputContent);
+              
+              // Reset tracked content
+              lastKnownInputContent = "";
+            }
+          }
+          
+          // Update state for next change
+          wasEnabled = !isNowDisabled;
+        }
+      }
+    });
+    
+    // Observe the button
+    buttonObserver.observe(sendButton, {
+      attributes: true,
+      attributeFilter: ['disabled']
+    });
+    
+    sendButton.dataset.stateMonitorAttached = "true";
+    console.log("Claude send button state monitor attached");
+  }
+  
+  // Initialize
+  setupInputTracking();
+  setupButtonObserver();
+  
+  // Also set up DOM observer for new buttons or input boxes
+  const container = document.querySelector('main') || document;
+  const domObserver = new MutationObserver(() => {
+    const inputBox = document.querySelector(CLAUDE_INPUT_SELECTOR);
+    if (inputBox && !inputBox.dataset.contentTrackingAttached) {
+      setupInputTracking();
+    }
+    
+    const sendButton = document.querySelector('button[aria-label*="Send message" i], button[aria-label*="Send Message" i]');
+    if (sendButton && !sendButton.dataset.stateMonitorAttached) {
+      setupButtonObserver();
+    }
+  });
+  
+  domObserver.observe(container, {
+    childList: true,
+    subtree: true
+  });
+}
+
 // Set up an initial scan after the page loads
 window.addEventListener('load', () => {
   // Give the page a moment to render all existing answers
@@ -1468,6 +1575,10 @@ window.addEventListener('load', () => {
   // Get current platform
   const platform = getCurrentPlatform();
   if (!platform) return;
+ 
+  
+  // Add this line:
+  setTimeout(setupClaudeSendButtonStateMonitor, 1000);
   
   // Check if tracking is enabled and only apply for ChatGPT for now
   // if (platform !== 'chatgpt') return;
@@ -1578,8 +1689,8 @@ window.addEventListener('unload', () => {
 
 // Function to send tab information to the background script
 function sendTabInfo() {
-  console.log("[DEBUG] sendTabInfo called with title:", document.title);
-  console.log("[DEBUG] Current URL:", window.location.href);
+  // console.log("[DEBUG] sendTabInfo called with title:", document.title);
+  // console.log("[DEBUG] Current URL:", window.location.href);
 
   const tabInfo = {
     title: document.title,
