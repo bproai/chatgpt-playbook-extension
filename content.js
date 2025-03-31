@@ -907,7 +907,8 @@ function storeValidAnswer(answerElement, richAnswer, modelInfo) {
     metadata: JSON.stringify({
       messageAttributes: extractMessageAttributes(answerElement),
       modelSlug: modelInfo.modelSlug
-    })
+    }),
+    url: window.location.href  // Add the current URL
   });
   
   isWaitingForAnswer = false;
@@ -1579,7 +1580,7 @@ window.addEventListener('load', () => {
   
   // Add this line:
   setTimeout(setupClaudeSendButtonStateMonitor, 1000);
-  
+
   // Check if tracking is enabled and only apply for ChatGPT for now
   // if (platform !== 'chatgpt') return;
   

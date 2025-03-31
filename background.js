@@ -160,7 +160,8 @@ async function uploadCachedData() {
       model: a.model,
       timestamp: a.timestamp,
       turn_number: a.turn_number,
-      metadata: a.metadata
+      metadata: a.metadata,
+      url: a.url
     }));
     
     // CHANGE 3: Filter out potentially problematic data
