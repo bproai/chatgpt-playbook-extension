@@ -545,20 +545,21 @@ function extractRichAnswer(answerElement) {
 
   // For regular ChatGPT text responses (original implementation preserved)
   // Try to locate the rich content container
-  let container = answerElement.querySelector('.markdown.prose') ||
-                  answerElement.querySelector('.markdown') ||
-                  answerElement.querySelector('.prose');
+  // let container = answerElement.querySelector('.markdown.prose') ||
+  //                 answerElement.querySelector('.markdown') ||
+  //                 answerElement.querySelector('.prose');
   
   // Fallback: if no specific container is found, use the entire answer element
-  if (!container) {
-    container = answerElement;
-  }
+  // if (!container) {
+  let container = answerElement;
+  // }
   
   // Use outerHTML to capture all the rich HTML content
   const htmlContent = container.outerHTML.trim();
   
   // Also capture the plain text for search or indexing purposes
-  const plainText = container.innerText.trim();
+  // const plainText = container.innerText.trim();
+  const plainText = container.outerHTML.trim();
   
   return { plain_text: plainText, html: htmlContent };
 }
@@ -848,8 +849,8 @@ function processAnswer(latestAnswer) {
     return;
   }
   
-  // Answer is valid, store it
-  storeValidAnswer(latestAnswer, richAnswer, modelInfo);
+  // // Answer is valid, store it
+  // storeValidAnswer(latestAnswer, richAnswer, modelInfo);
   
   // Extract content directly
   console.log("Sending content extraction request to background script");
@@ -861,6 +862,9 @@ function processAnswer(latestAnswer) {
     
     if (response && response.success) {
       if (response.contentExtracted) {
+        // Answer is valid, store it
+        storeValidAnswer(latestAnswer, {"plain_text":response.extractedContent}, modelInfo);
+
         console.log("Content successfully extracted and sent via WebSocket, length:", response.contentLength);
       } else {
         console.log("ExtractContent script executed but content not directly extracted");
