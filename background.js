@@ -656,56 +656,51 @@ function extractContentDirectly() {
     // Claude-specific implementation for article extraction
     console.log(`Extracting article content from Claude`);
     
-    // Find all copy buttons in Claude's interface - they have a data-testid="action-bar-copy"
-    const claudeCopyButtons = document.querySelectorAll('button[data-testid="action-bar-copy"]');
+    // Get all assistant message containers
+    const assistantContainers = document.querySelectorAll('div[data-is-streaming="false"]');
 
-    if (claudeCopyButtons.length === 0) {
-      console.log("No Claude copy buttons found");
-      return {success: false, error: "No Claude copy buttons found"};
+    if (assistantContainers.length === 0) {
+      console.log("No Claude assistant containers found");
+      return {success: false, error: "No Claude assistant containers found"};
     }
 
-    // Get the last/most recent copy button
-    const lastCopyButton = claudeCopyButtons[claudeCopyButtons.length - 1];
+   // Get the last/most recent assistant container
+   const lastAssistantContainer = assistantContainers[assistantContainers.length - 1];
 
-    if (lastCopyButton && !lastCopyButton.disabled) {
-      console.log("Found Claude copy button");
+   if (lastAssistantContainer) {
+    return waitForComplete(lastAssistantContainer, 8).then(finalContent => {
+      // Check again for article after waiting  
+      let articleElement = lastAssistantContainer.querySelector('div[data-is-streaming]');
+      articleElement = lastAssistantContainer.querySelector('.font-claude-message') || articleElement;
       
-      // First, find the message container that contains this button
-      const messageContainer = lastCopyButton.closest('div[data-is-streaming="false"]');
-      let messageContent = "";
-      
-      if (messageContainer) {
-        // Find the message content within this container
-        const claudeMessage = messageContainer.querySelector('.font-claude-message');
-        if (claudeMessage) {
-          const contentDiv = claudeMessage.querySelector('div > div.grid.gap-2\\.5');
-          if (contentDiv) {
-            // Get all paragraphs, lists, and other formatted content
-            messageContent = contentDiv.innerHTML;
-          } else {
-            messageContent = claudeMessage.innerText || claudeMessage.textContent;
-          }
-
-
-
-
-
-
-
-        }
-        console.log("Extracted Claude content length:", messageContent.length);
+      if (articleElement) {
+        // Found an article element - use its complete HTML (outer HTML)
+        const articleContent = articleElement.outerHTML;
+        console.log("Extracted full Claude article content length:", articleContent.length);
+        
+        return {
+          success: true,
+          content: articleContent,
+          messageId: `claude_assistant_${new Date().getTime()}`
+        };
+      } else {
+        // No article found - wrap the entire assistant container in article tags
+        const wrappedContent = `<article>${lastAssistantContainer.innerHTML}</article>`;
+        console.log("No article found - wrapped assistant content length:", wrappedContent.length);
+        
+        return {
+          success: true,
+          content: wrappedContent,
+          messageId: `claude_assistant_${new Date().getTime()}`
+        };
       }
-      
-      return {
-        success: true,
-        content: messageContent,
-        messageId: `claude_assistant_${new Date().getTime()}`
-      };
-    } else {
+    });
+  } else {
       console.log("Claude copy button not found or is disabled");
       return {success: false, error: "Claude copy button not found or disabled"};
     }
   } 
+  
   else if (isChatGPT) {
 
     // Original ChatGPT implementation - unchanged
