@@ -704,15 +704,12 @@ function extractContentDirectly() {
   else if (isChatGPT) {
 
     // Original ChatGPT implementation - unchanged
-    const copyButtons = document.querySelectorAll('button[aria-label="Copy"]');
+    // const copyButtons = document.querySelectorAll('button[aria-label="Copy"]');
 
-    if (copyButtons.length === 0) {
-      console.log("No copy buttons found");
-      return {success: false, error: "No copy buttons found"};
-
-
-
-    }
+    // if (copyButtons.length === 0) {
+    //   console.log("No copy buttons found");
+    //   return {success: false, error: "No copy buttons found"};
+    // }
 
     // Find all the articles in the page (ChatGPT responses are in article elements)
     const articles = document.querySelectorAll('article');

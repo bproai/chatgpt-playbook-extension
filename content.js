@@ -313,6 +313,9 @@ function isAnswerComplete(answerElement) {
       console.log("DETECTION ISSUE: Could not find article container for image");
       return false;
     }
+
+
+    
     
     // ENHANCED BLUR DETECTION: Check multiple indicators that images are still loading
     
@@ -353,7 +356,7 @@ function isAnswerComplete(answerElement) {
     
     if (isStillLoading) {
       console.log("Image is still loading/blurred, not considering complete yet");
-      return false;
+      // return false;
     }
     
     // COMPLETION INDICATORS: Check for elements that appear when image generation is complete
@@ -370,7 +373,7 @@ function isAnswerComplete(answerElement) {
     const hasFullyLoadedImages = fullyLoadedImages.length > 0;
     
     // If we have completion indicators, consider the answer complete
-    const isComplete = copyButton || hasImageCreatedText || hasFullyLoadedImages;
+    const isComplete = copyButton || (hasImageCreatedText && !isStillLoading) || hasFullyLoadedImages;
     
     console.log("Image completion indicators:", {
       hasCopyButton: !!copyButton,
