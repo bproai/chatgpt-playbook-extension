@@ -593,7 +593,7 @@ function clickSubmitButton(platform) {
   } 
   else if (platform === 'claude') {
     // Claude implementation
-    const claudeButton = document.querySelector('button[aria-label="Send Message"]');
+    const claudeButton = document.querySelector('button[aria-label="Send message"]');
     if (claudeButton && !claudeButton.disabled) {
       console.log("Found and clicking Claude send button");
       claudeButton.click();
